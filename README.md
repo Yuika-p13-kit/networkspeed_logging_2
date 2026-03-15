@@ -4,6 +4,8 @@
 
 ### 現在の実装準備状況
 - 詳細要件: `docs/requirements.md`
+- 設計仕様（関数レベル）: `docs/design-spec.md`
+- テスト設計: `docs/test-design.md`
 - 最優先: 復旧フロー（計測リトライ / DB 障害時 CSV 退避・再投入）
 - 次段: 読み取り専用 API / ダッシュボード
 

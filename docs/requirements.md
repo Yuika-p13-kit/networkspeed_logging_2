@@ -30,6 +30,7 @@
 - `device` 既定値は `Mac` を維持。
 - CSV 退避ファイル名は `network_speed_backup.csv` を維持。
 - 計測ライブラリは `speedtest`（speedtest-cli 系）を維持。
+- 実行ツールは iMac では `brew install speedtest` で入る `speedtest` を使い、Raspberry Pi でも同じ `speedtest` CLI を使う（導入方法は環境ごとに異なる）。
 
 ## 4. 機能要件
 ### 4.1 設定層

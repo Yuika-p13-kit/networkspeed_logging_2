@@ -1,0 +1,17 @@
+[Unit]
+Description=Network Speed Monitor
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=threeb
+WorkingDirectory=/home/threeb/network_speed
+ExecStart=/home/threeb/network_speed/.venv/bin/python /home/threeb/network_speed/main.py
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+Environment=NETWORK_SPEED_DEVICE=raspi3B
+
+[Install]
+WantedBy=multi-user.target

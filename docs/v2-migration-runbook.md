@@ -46,6 +46,29 @@ python scripts/backfill_v1_to_v2.py
 python scripts/backfill_v1_to_v2.py --since "2026-07-01 00:00:00"
 ```
 
+## Step 3: 監視フェーズ
+
+1. dual_write を有効化した設定で systemd を反映します。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart network-speed.service
+sudo systemctl status network-speed.service
+```
+
+2. 監視スクリプトで v1/v2 の件数差と最新時刻差を点検します。
+
+```bash
+python scripts/monitor_dual_write.py
+python scripts/monitor_dual_write.py --max-count-gap 5 --max-lag-seconds 300
+python scripts/monitor_dual_write.py --json
+```
+
+3. 閾値超過時は次の順で対応します。
+
+- `scripts/backfill_v1_to_v2.py` を再実行して差分を解消する。
+- 差分が解消しない場合は `NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v1_only` に切り戻し、原因調査後に再度 dual_write を有効化する。
+
 ## 整合性確認 SQL
 
 ```sql

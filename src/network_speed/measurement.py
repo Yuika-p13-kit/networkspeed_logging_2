@@ -12,7 +12,7 @@ from typing import Callable
 from .models import MeasurementRecord
 
 
-SERVER_ID = "XXXX"
+SERVER_ID = ""
 
 
 class MeasurementFailedError(Exception):
@@ -30,7 +30,9 @@ def run_speedtest() -> dict:
 		"error": None,
 	}
 
-	command = ["speedtest", "--format=json", "--server-id", SERVER_ID]
+	command = ["speedtest", "--format=json"]
+	if SERVER_ID:
+		command += ["--server-id", SERVER_ID]
 	try:
 		completed = subprocess.run(
 			command,

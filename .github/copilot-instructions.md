@@ -49,15 +49,31 @@
 - やむを得ず相互参照が必要な場合は、事前にユーザーに理由を説明して許可を得てから実施してください。
 
 ## 使用するデータベース構造
-    Column     |            Type             | Collation | Nullable |                      Default                      
----------------+-----------------------------+-----------+----------+---------------------------------------------------
- id            | integer                     |           | not null | nextval('network_speed_logs_v2_id_seq'::regclass)
- measured_at   | timestamp without time zone |           | not null | 
- download_mbps | numeric(10,3)               |           |          | 
- upload_mbps   | numeric(10,3)               |           |          | 
- ping_ms       | numeric(10,3)               |           |          | 
- device        | character varying(32)       |           |          | 
- status        | character varying(16)       |           | not null | 
- error         | text                        |           |          | 
- created_at    | timestamp without time zone |           |          | now()
+
+### 現フェーズ（稼働中）: `network_speed_measurements`
+最小変更方針により、既存テーブルをそのまま利用しています。
+実装（repository.py）はこのテーブルに書き込みます。
+
+    Column               |            Type             | Nullable |               Default
+---------------------+-----------------------------+----------+--------------------------------------
+ id                  | integer                     | not null | nextval('network_speed_measurements_id_seq')
+ timestamp           | timestamp without time zone |          | now()
+ download_speed_mbps | numeric(10,3)               |          |
+ upload_speed_mbps   | numeric(10,3)               |          |
+ device              | character varying(8)        |          |
+
+### 次フェーズ（移行予定）: `network_speed_logs_v2`
+次フェーズでスキーマ移行を行う予定です。それまでこのテーブルには触れないでください。
+
+    Column     |            Type             | Nullable |                      Default
+---------------+-----------------------------+----------+---------------------------------------------------
+ id            | integer                     | not null | nextval('network_speed_logs_v2_id_seq'::regclass)
+ measured_at   | timestamp without time zone | not null |
+ download_mbps | numeric(10,3)               |          |
+ upload_mbps   | numeric(10,3)               |          |
+ ping_ms       | numeric(10,3)               |          |
+ device        | character varying(32)       |          |
+ status        | character varying(16)       | not null |
+ error         | text                        |          |
+ created_at    | timestamp without time zone |          | now()
 

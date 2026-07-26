@@ -51,7 +51,13 @@ def _record() -> MeasurementRecord:
 
 
 def _config() -> SimpleNamespace:
-    return SimpleNamespace(retry_max_attempts=5, device="Mac", db="db", backup_csv_path="network_speed_backup.csv")
+    return SimpleNamespace(
+        retry_max_attempts=5,
+        device="Mac",
+        db="db",
+        backup_csv_path="network_speed_backup.csv",
+        schema_migration_mode="v1_only",
+    )
 
 
 def test_run_measurement_cycle_db_success_no_csv_append(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -102,7 +108,11 @@ def test_bootstrap_calls_replay_and_continues_on_failure(monkeypatch: pytest.Mon
     calls = {"register": 0, "loop": 0}
 
     monkeypatch.setattr(main, "load_app_config", lambda base_dir='.': cfg)
-    monkeypatch.setattr(main, "PostgresRepository", lambda db_config: fake_repo)
+    monkeypatch.setattr(
+        main,
+        "PostgresRepository",
+        lambda db_config, schema_migration_mode="v1_only": fake_repo,
+    )
     monkeypatch.setattr(main, "CsvBackupStore", lambda csv_path: fake_backup)
 
     def _fake_register(schedule_module, job_callable):

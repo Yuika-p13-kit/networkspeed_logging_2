@@ -58,7 +58,10 @@ def bootstrap_and_run(base_dir: str | Path = ".") -> None:
     )
 
     config = load_app_config(base_dir=base_dir)
-    repo = PostgresRepository(config.db)
+    repo = PostgresRepository(
+        config.db,
+        schema_migration_mode=config.schema_migration_mode,
+    )
     backup = CsvBackupStore(config.backup_csv_path)
 
     logger.info("アプリ起動: base_dir=%s", Path(base_dir))

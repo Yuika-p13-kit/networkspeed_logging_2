@@ -78,3 +78,27 @@ def test_load_app_config_without_file_uses_env(tmp_path: Path, monkeypatch: pyte
     assert app_config.db.database == "netdb"
     assert app_config.device == "Mac"
     assert app_config.retry_max_attempts == 5
+    assert app_config.schema_migration_mode == "v1_only"
+
+
+def test_load_app_config_schema_migration_mode_valid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NETWORK_SPEED_DB_HOST", "localhost")
+    monkeypatch.setenv("NETWORK_SPEED_DB_NAME", "netdb")
+    monkeypatch.setenv("NETWORK_SPEED_DB_USER", "tester")
+    monkeypatch.setenv("NETWORK_SPEED_DB_PASSWORD", "secret")
+    monkeypatch.setenv("NETWORK_SPEED_SCHEMA_MIGRATION_MODE", "dual_write")
+
+    app_config = load_app_config(base_dir=tmp_path)
+
+    assert app_config.schema_migration_mode == "dual_write"
+
+
+def test_load_app_config_schema_migration_mode_invalid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("NETWORK_SPEED_DB_HOST", "localhost")
+    monkeypatch.setenv("NETWORK_SPEED_DB_NAME", "netdb")
+    monkeypatch.setenv("NETWORK_SPEED_DB_USER", "tester")
+    monkeypatch.setenv("NETWORK_SPEED_DB_PASSWORD", "secret")
+    monkeypatch.setenv("NETWORK_SPEED_SCHEMA_MIGRATION_MODE", "invalid")
+
+    with pytest.raises(ValueError):
+        load_app_config(base_dir=tmp_path)

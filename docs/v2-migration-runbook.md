@@ -69,6 +69,25 @@ python scripts/monitor_dual_write.py --json
 - `scripts/backfill_v1_to_v2.py` を再実行して差分を解消する。
 - 差分が解消しない場合は `NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v1_only` に切り戻し、原因調査後に再度 dual_write を有効化する。
 
+## Step 4: カットオーバー
+
+1. 監視結果が連続して閾値内であることを確認したうえで、systemd の設定を `v2_only` に切り替えます。
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart network-speed.service
+sudo systemctl status network-speed.service
+```
+
+2. 切り替え後は、読み取りと監視を継続し、v2 のみで更新されていることを確認します。
+
+```bash
+python scripts/monitor_dual_write.py --max-count-gap 0 --max-lag-seconds 120
+python scripts/monitor_dual_write.py --json
+```
+
+3. 問題が出た場合は、Step 3 の切り戻し手順で `v1_only` に戻します。
+
 ## 整合性確認 SQL
 
 ```sql

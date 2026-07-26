@@ -12,7 +12,7 @@ Restart=always
 RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 Environment=NETWORK_SPEED_DEVICE=raspi3B
-Environment=NETWORK_SPEED_SCHEMA_MIGRATION_MODE=dual_write
+Environment=NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v2_only
 
 [Install]
 WantedBy=multi-user.target

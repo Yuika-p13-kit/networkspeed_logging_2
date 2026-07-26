@@ -1,0 +1,83 @@
+# v2 Migration Runbook
+
+## 前提条件
+
+- 実行ディレクトリはリポジトリルートとします。
+- `NETWORK_SPEED_DB_*` 環境変数、または `database_info.txt`（ルート）、または `old_src/database_info.txt` で DB 接続情報を解決します。
+- `network_speed_measurements`（v1）と `network_speed_logs_v2`（v2）が参照可能であること。
+
+## Step 1: dual_write 検証
+
+1. 1 件書き込みと v1/v2 反映を確認します（既定では検証データを削除します）。
+
+```bash
+python scripts/verify_dual_write.py
+```
+
+2. 検証データを残して目視確認したい場合:
+
+```bash
+python scripts/verify_dual_write.py --no-cleanup
+```
+
+## Step 2: バックフィル
+
+1. まず dry-run で対象件数のみ確認します。
+
+```bash
+python scripts/backfill_v1_to_v2.py --dry-run
+```
+
+2. 期間を絞る場合（下限時刻指定）:
+
+```bash
+python scripts/backfill_v1_to_v2.py --dry-run --since "2026-07-01 00:00:00"
+```
+
+3. 本実行:
+
+```bash
+python scripts/backfill_v1_to_v2.py
+```
+
+4. 期間指定で本実行:
+
+```bash
+python scripts/backfill_v1_to_v2.py --since "2026-07-01 00:00:00"
+```
+
+## 整合性確認 SQL
+
+```sql
+-- v1 件数
+SELECT count(*) AS v1_count
+FROM network_speed_measurements;
+
+-- v2 成功データ件数
+SELECT count(*) AS v2_success_count
+FROM network_speed_logs_v2
+WHERE status = 'success';
+
+-- 最新時刻比較
+SELECT
+  (SELECT max(timestamp) FROM network_speed_measurements) AS v1_latest,
+  (SELECT max(measured_at) FROM network_speed_logs_v2 WHERE status = 'success') AS v2_latest;
+```
+
+## 切り戻し手順
+
+1. 実行環境の設定を v1 のみに戻します。
+
+```bash
+export NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v1_only
+```
+
+2. 監視プロセスを再起動し、書き込み先が v1 のみになったことを確認します。
+
+## カットオーバー判定条件
+
+- dual_write 検証で v1/v2 の両方に 1 件ずつ反映される。
+- バックフィル dry-run の件数が想定どおりである。
+- バックフィル本実行後、再度 dry-run が 0 件または許容範囲の差分である。
+- 最新時刻比較で v1 と v2（success）の遅延が許容範囲内である。
+- 切り戻し手順が検証済みである。

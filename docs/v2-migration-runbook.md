@@ -86,6 +86,15 @@ python scripts/monitor_dual_write.py --max-count-gap 0 --max-lag-seconds 120
 python scripts/monitor_dual_write.py --json
 ```
 
+> **注意**: `v2_only` 移行後は v1 への書き込みが止まるため、v2 の件数が v1 を上回ります。  
+> `--max-count-gap` と `--max-lag-seconds` を大きな値にすることで見かけ上の alert を抑制できます。
+
+```bash
+# v2_only 運用での正常監視コマンド（件数差を無視し、最新時刻差のみ監視）
+# v2_only では v1 への書き込みが止まるため、件数差・最新時刻差ともに閾値を緩和する
+python scripts/monitor_dual_write.py --max-count-gap 100000 --max-lag-seconds 100000
+```
+
 3. 問題が出た場合は、Step 3 の切り戻し手順で `v1_only` に戻します。
 
 ## 整合性確認 SQL

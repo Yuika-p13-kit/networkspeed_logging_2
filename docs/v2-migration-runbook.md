@@ -64,7 +64,14 @@ python scripts/monitor_dual_write.py --max-count-gap 5 --max-lag-seconds 300
 python scripts/monitor_dual_write.py --json
 ```
 
-3. 閾値超過時は次の順で対応します。
+3. 1週間後の移行可否は、次のコマンド1回で判定できます（decision=go なら移行可）。
+
+```bash
+# dual_write 判定例
+python scripts/monitor_dual_write.py --mode dual_write --observation-days 7 --interval-minutes 10 --min-sample-coverage 0.99 --max-count-gap 5 --max-lag-seconds 300 --json
+```
+
+4. 閾値超過時は次の順で対応します。
 
 - `scripts/backfill_v1_to_v2.py` を再実行して差分を解消する。
 - 差分が解消しない場合は `NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v1_only` に切り戻し、原因調査後に再度 dual_write を有効化する。
@@ -82,20 +89,20 @@ sudo systemctl status network-speed.service
 2. 切り替え後は、読み取りと監視を継続し、v2 のみで更新されていることを確認します。
 
 ```bash
-python scripts/monitor_dual_write.py --max-count-gap 0 --max-lag-seconds 120
-python scripts/monitor_dual_write.py --json
+python scripts/monitor_dual_write.py --mode v2_only --max-lag-seconds 300
+python scripts/monitor_dual_write.py --mode v2_only --json
 ```
 
-> **注意**: `v2_only` 移行後は v1 への書き込みが止まるため、v2 の件数が v1 を上回ります。  
-> `--max-count-gap` と `--max-lag-seconds` を大きな値にすることで見かけ上の alert を抑制できます。
+3. 1週間後の移行可否は、次のコマンド1回で判定できます（decision=go なら移行可）。
 
 ```bash
-# v2_only 運用での正常監視コマンド（件数差を無視し、最新時刻差のみ監視）
-# v2_only では v1 への書き込みが止まるため、件数差・最新時刻差ともに閾値を緩和する
-python scripts/monitor_dual_write.py --max-count-gap 100000 --max-lag-seconds 100000
+# v2_only 判定例
+python scripts/monitor_dual_write.py --mode v2_only --observation-days 7 --interval-minutes 10 --min-sample-coverage 0.99 --max-lag-seconds 300 --json
 ```
 
-3. 問題が出た場合は、Step 3 の切り戻し手順で `v1_only` に戻します。
+> **注意**: `v2_only` 移行後は v1 への書き込みが止まるため、`--mode v2_only` を明示して判定軸を切り替えてください。
+
+4. 問題が出た場合は、Step 3 の切り戻し手順で `v1_only` に戻します。
 
 ## 整合性確認 SQL
 

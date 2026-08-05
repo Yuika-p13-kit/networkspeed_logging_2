@@ -106,13 +106,14 @@ def test_bootstrap_calls_replay_and_continues_on_failure(monkeypatch: pytest.Mon
     fake_backup = FakeBackup(fail_on_replay=True)
     cfg = _config()
     calls = {"register": 0, "loop": 0}
+    captured = {"schema_migration_mode": None}
 
     monkeypatch.setattr(main, "load_app_config", lambda base_dir='.': cfg)
-    monkeypatch.setattr(
-        main,
-        "PostgresRepository",
-        lambda db_config, schema_migration_mode="v2_only": fake_repo,
-    )
+    def _fake_repository_factory(db_config, schema_migration_mode="v2_only"):
+        captured["schema_migration_mode"] = schema_migration_mode
+        return fake_repo
+
+    monkeypatch.setattr(main, "PostgresRepository", _fake_repository_factory)
     monkeypatch.setattr(main, "CsvBackupStore", lambda csv_path: fake_backup)
 
     def _fake_register(schedule_module, job_callable):
@@ -129,5 +130,6 @@ def test_bootstrap_calls_replay_and_continues_on_failure(monkeypatch: pytest.Mon
 
     assert fake_repo.connected is True
     assert fake_backup.replay_called == 1
+    assert captured["schema_migration_mode"] == cfg.schema_migration_mode
     assert calls["register"] == 1
     assert calls["loop"] == 1

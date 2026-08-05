@@ -15,13 +15,10 @@
 ```bash
 # uv で Python 環境を初期化
 uv sync
-
-# PostgreSQL データベースとテーブルを初期化
-uv run python scripts/init_db.py
-
-# 既存の CSV バックアップがあれば復旧
-uv run python scripts/restore_backup.py
 ```
+
+テーブル初期化は運用環境の SQL 適用手順に従って実施してください。
+CSV バックアップの再投入はアプリ起動時に自動で実行されます。
 
 ## 実行方法
 
@@ -37,7 +34,7 @@ uv run python main.py
 
 - DB 接続エラー: `database_info.txt` の接続情報を確認
 - 計測失敗: ネットワーク接続を確認（自動リトライは最大 5 回実行）
-- CSV 退避ファイルが残っている: 手動で `uv run python scripts/restore_backup.py` を実行
+- CSV 退避ファイルが残っている: `uv run python main.py` の起動時再投入ログを確認
 
 v2_only 運用のバックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
 本番は `network_speed_logs_v2` への `v2_only` 運用へ移行済みです。

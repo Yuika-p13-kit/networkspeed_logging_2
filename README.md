@@ -39,7 +39,7 @@ uv run python main.py
 - 計測失敗: ネットワーク接続を確認（自動リトライは最大 5 回実行）
 - CSV 退避ファイルが残っている: 手動で `uv run python scripts/restore_backup.py` を実行
 
-v2 移行の検証・バックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
+v2_only 運用のバックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
 本番は `network_speed_logs_v2` への `v2_only` 運用へ移行済みです。
 運用時の監視と 7 日判定は `python scripts/monitor_dual_write.py --mode v2_only ...` を利用してください。
 

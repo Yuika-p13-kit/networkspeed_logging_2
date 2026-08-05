@@ -40,8 +40,8 @@ uv run python main.py
 - CSV 退避ファイルが残っている: 手動で `uv run python scripts/restore_backup.py` を実行
 
 v2 移行の検証・バックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
-dual_write 監視は `python scripts/monitor_dual_write.py` を利用してください。
-運用手順は `docs/v2-migration-runbook.md` の「Step 3: 監視フェーズ」を参照してください。
+本番は `network_speed_logs_v2` への `v2_only` 運用へ移行済みです。
+運用時の監視と 7 日判定は `python scripts/monitor_dual_write.py --mode v2_only ...` を利用してください。
 
 ## 開発環境整備
 
@@ -53,15 +53,16 @@ uv run pytest tests/
 uv run black src/ && uv run flake8 src/
 ```
 
-### 現在の実装準備状況
+### 現在の実装状況
 - 詳細要件: `docs/requirements.md`
 - 設計仕様（関数レベル）: `docs/design-spec.md`
 - テスト設計: `docs/test-design.md`
-- 最優先: 復旧フロー（計測リトライ / DB 障害時 CSV 退避・再投入）
+- 稼働中: `network_speed_logs_v2` への 10 分間隔書き込み
+- 維持中: 復旧フロー（計測リトライ / DB 障害時 CSV 退避・再投入）
 - 次段: 読み取り専用 API / ダッシュボード
 
-### 互換要件（抜粋）
-- テーブル: `network_speed_measurements`（既存流用）
+### 運用要件（抜粋）
+- 保存先テーブル: `network_speed_logs_v2`
 - 計測失敗時: 最大 5 回リトライ
 - スケジュール: 毎時 `:00/:10/:20/:30/:40/:50`
 - DB 書き込み失敗時: CSV 退避、起動時再投入後削除
@@ -70,12 +71,3 @@ uv run black src/ && uv run flake8 src/
 - CSV 退避先: `network_speed_backup.csv`
 - 旧実装計測ライブラリ: `speedtest`
 - 実行ツールは iMac では `brew install speedtest` で入る `speedtest` を利用し、Raspberry Pi でも同じ `speedtest` CLI を使う（導入方法は環境依存）
-
-### 次の着手
-1. 設定層（`database_info.txt` 互換読み込み）
-2. PostgreSQL 永続化層
-3. CSV バックアップ層
-4. 計測層
-5. スケジューラ層
-6. `main.py` オーケストレーター化
-7. 読み取り専用 API / ダッシュボード

@@ -42,6 +42,7 @@ uv run python main.py
 v2_only 運用のバックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
 本番は `network_speed_logs_v2` への `v2_only` 運用へ移行済みです。
 運用時の監視と 7 日判定は `python scripts/monitor_dual_write.py --mode v2_only ...` を利用してください。
+v1互換導線（`v1_only`）は切り戻し専用として一時的に維持し、`v2_only` の 7日判定で `decision=go` を2サイクル連続で満たした日から14日以内に段階的撤去を開始します。
 
 ## 開発環境整備
 

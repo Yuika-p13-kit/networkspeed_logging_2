@@ -6,6 +6,12 @@
 - `NETWORK_SPEED_DB_*` 環境変数、または `database_info.txt`（ルート）、または `old_src/database_info.txt` で DB 接続情報を解決します。
 - `network_speed_logs_v2`（v2）での通常運用を前提とし、`network_speed_measurements`（v1）は切り戻し時のみ参照します。
 
+## v1互換の保持方針（撤去期限つき）
+
+- v1互換（`v1_only` と v1テーブル参照）を残す理由は、障害時に即時切り戻して計測停止を避けるためです。
+- 撤去期限は「`v2_only` の 7日判定で `decision=go` を2サイクル連続で満たした日から14日以内」とします。
+- 期限到達後は、別PRで v1/dual_write のコードと手順を段階的に削除します（テーブルDROPはこのrunbookの対象外）。
+
 ## Step 1: v2_only 運用前提の確認
 
 1. `v2_only` 前提の 7 日判定を確認します。
@@ -102,6 +108,8 @@ python scripts/monitor_dual_write.py --mode v2_only --observation-days 7 --inter
 ```
 
 > **注意**: 通常運用は `v2_only` が前提です。`v1_only` は切り戻し時の例外手順としてのみ使ってください。
+
+> **撤去目安**: `v2_only` の 7日判定が2サイクル連続で `decision=go` になったら、14日以内に v1互換導線の削除PRを起票してください。
 
 4. 問題が出た場合は、Step 3 の切り戻し手順で `v1_only` に戻します。
 

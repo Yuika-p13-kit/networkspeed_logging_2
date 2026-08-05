@@ -13,7 +13,7 @@ _logger = logging.getLogger(__name__)
 
 
 class PostgresRepository:
-	def __init__(self, config: DatabaseConfig, schema_migration_mode: str = "v1_only"):
+	def __init__(self, config: DatabaseConfig, schema_migration_mode: str = "v2_only"):
 		if schema_migration_mode not in _VALID_SCHEMA_MIGRATION_MODES:
 			raise ValueError(
 				"invalid schema_migration_mode: "
@@ -50,31 +50,36 @@ class PostgresRepository:
 		connection = self._require_connection()
 
 		if self._schema_migration_mode == "v1_only":
-			with connection.cursor() as cursor:
-				self._insert_v1(cursor=cursor, record=record)
-			connection.commit()
+			self._insert_and_commit(connection, self._insert_v1, record)
 			return
 
 		if self._schema_migration_mode == "dual_write":
-			with connection.cursor() as cursor:
-				self._insert_v1(cursor=cursor, record=record)
-			connection.commit()
-
-			try:
-				with connection.cursor() as cursor:
-					self._insert_v2(cursor=cursor, record=record)
-				connection.commit()
-			except Exception:
-				connection.rollback()
-				_logger.warning(
-					"v2 insert failed after successful v1 commit in dual_write mode",
-					exc_info=True,
-				)
+			self._insert_v1_then_v2(connection, record)
 			return
 
+		self._insert_and_commit(connection, self._insert_v2, record)
+
+	def _insert_and_commit(
+		self,
+		connection: Any,
+		insert_func: Any,
+		record: MeasurementRecord,
+	) -> None:
 		with connection.cursor() as cursor:
-			self._insert_v2(cursor=cursor, record=record)
+			insert_func(cursor=cursor, record=record)
 		connection.commit()
+
+	def _insert_v1_then_v2(self, connection: Any, record: MeasurementRecord) -> None:
+		self._insert_and_commit(connection, self._insert_v1, record)
+
+		try:
+			self._insert_and_commit(connection, self._insert_v2, record)
+		except Exception:
+			connection.rollback()
+			_logger.warning(
+				"v2 insert failed after successful v1 commit in dual_write mode",
+				exc_info=True,
+			)
 
 	@staticmethod
 	def _insert_v1(cursor: Any, record: MeasurementRecord) -> None:
@@ -114,24 +119,7 @@ class PostgresRepository:
 	def fetch_latest(self) -> MeasurementRecord | None:
 		connection = self._require_connection()
 		with connection.cursor() as cursor:
-			if self._schema_migration_mode == "v2_only":
-				cursor.execute(
-					"""
-					SELECT measured_at, download_mbps, upload_mbps, device
-					FROM network_speed_logs_v2
-					ORDER BY measured_at DESC
-					LIMIT 1
-					"""
-				)
-			else:
-				cursor.execute(
-					"""
-					SELECT timestamp, download_speed_Mbps, upload_speed_Mbps, device
-					FROM network_speed_measurements
-					ORDER BY timestamp DESC
-					LIMIT 1
-					"""
-				)
+			cursor.execute(self._latest_measurement_sql())
 			row = cursor.fetchone()
 
 		if row is None:
@@ -144,29 +132,40 @@ class PostgresRepository:
 
 		connection = self._require_connection()
 		with connection.cursor() as cursor:
-			if self._schema_migration_mode == "v2_only":
-				cursor.execute(
-					"""
-					SELECT measured_at, download_mbps, upload_mbps, device
-					FROM network_speed_logs_v2
-					ORDER BY measured_at DESC
-					LIMIT %s
-					""",
-					(limit,),
-				)
-			else:
-				cursor.execute(
-					"""
-					SELECT timestamp, download_speed_Mbps, upload_speed_Mbps, device
-					FROM network_speed_measurements
-					ORDER BY timestamp DESC
-					LIMIT %s
-					""",
-					(limit,),
-				)
+			cursor.execute(self._history_measurement_sql(), (limit,))
 			rows = cursor.fetchall()
 
 		return [self._row_to_record(row) for row in rows]
+
+	def _latest_measurement_sql(self) -> str:
+		if self._schema_migration_mode == "v2_only":
+			return """
+			SELECT measured_at, download_mbps, upload_mbps, device
+			FROM network_speed_logs_v2
+			ORDER BY measured_at DESC
+			LIMIT 1
+			"""
+		return """
+		SELECT timestamp, download_speed_Mbps, upload_speed_Mbps, device
+		FROM network_speed_measurements
+		ORDER BY timestamp DESC
+		LIMIT 1
+		"""
+
+	def _history_measurement_sql(self) -> str:
+		if self._schema_migration_mode == "v2_only":
+			return """
+			SELECT measured_at, download_mbps, upload_mbps, device
+			FROM network_speed_logs_v2
+			ORDER BY measured_at DESC
+			LIMIT %s
+			"""
+		return """
+		SELECT timestamp, download_speed_Mbps, upload_speed_Mbps, device
+		FROM network_speed_measurements
+		ORDER BY timestamp DESC
+		LIMIT %s
+		"""
 
 	def _require_connection(self) -> Any:
 		if self._connection is None:

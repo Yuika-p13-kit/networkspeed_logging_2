@@ -56,7 +56,7 @@ class FakeConnection:
         self.close_count += 1
 
 
-def _repo() -> PostgresRepository:
+def _repo(schema_migration_mode: str = "v2_only") -> PostgresRepository:
     config = DatabaseConfig(
         host="localhost",
         database="netdb",
@@ -64,11 +64,11 @@ def _repo() -> PostgresRepository:
         password="secret",
         port=5432,
     )
-    return PostgresRepository(config)
+    return PostgresRepository(config, schema_migration_mode=schema_migration_mode)
 
 
 def test_insert_measurement_commits() -> None:
-    repo = _repo()
+    repo = _repo(schema_migration_mode="v1_only")
     cursor = FakeCursor()
     connection = FakeConnection(cursor)
     repo._connection = connection
@@ -219,7 +219,7 @@ def test_fetch_latest_returns_none_when_empty() -> None:
 
 
 def test_fetch_latest_returns_measurement_record() -> None:
-    repo = _repo()
+    repo = _repo(schema_migration_mode="v1_only")
     timestamp = datetime(2026, 1, 1, 0, 10, 0)
     cursor = FakeCursor(fetchone_result=(timestamp, 10.123, 5.678, "Mac"))
     repo._connection = FakeConnection(cursor)
@@ -234,7 +234,7 @@ def test_fetch_latest_returns_measurement_record() -> None:
 
 
 def test_fetch_history_limit_and_order() -> None:
-    repo = _repo()
+    repo = _repo(schema_migration_mode="v1_only")
     rows = [
         (datetime(2026, 1, 1, 0, 20, 0), 20.0, 10.0, "Mac"),
         (datetime(2026, 1, 1, 0, 10, 0), 10.0, 5.0, "Mac"),

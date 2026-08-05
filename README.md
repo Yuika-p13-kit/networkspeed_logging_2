@@ -39,6 +39,10 @@ uv run python main.py
 - 計測失敗: ネットワーク接続を確認（自動リトライは最大 5 回実行）
 - CSV 退避ファイルが残っている: 手動で `uv run python scripts/restore_backup.py` を実行
 
+v2 移行の検証・バックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
+dual_write 監視は `python scripts/monitor_dual_write.py` を利用してください。
+運用手順は `docs/v2-migration-runbook.md` の「Step 3: 監視フェーズ」を参照してください。
+
 ## 開発環境整備
 
 ```bash

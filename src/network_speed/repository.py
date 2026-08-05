@@ -13,7 +13,7 @@ _logger = logging.getLogger(__name__)
 
 
 class PostgresRepository:
-	def __init__(self, config: DatabaseConfig, schema_migration_mode: str = "v1_only"):
+	def __init__(self, config: DatabaseConfig, schema_migration_mode: str = "v2_only"):
 		if schema_migration_mode not in _VALID_SCHEMA_MIGRATION_MODES:
 			raise ValueError(
 				"invalid schema_migration_mode: "

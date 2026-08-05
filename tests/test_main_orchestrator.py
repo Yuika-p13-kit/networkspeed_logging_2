@@ -56,7 +56,7 @@ def _config() -> SimpleNamespace:
         device="Mac",
         db="db",
         backup_csv_path="network_speed_backup.csv",
-        schema_migration_mode="v1_only",
+        schema_migration_mode="v2_only",
     )
 
 
@@ -111,7 +111,7 @@ def test_bootstrap_calls_replay_and_continues_on_failure(monkeypatch: pytest.Mon
     monkeypatch.setattr(
         main,
         "PostgresRepository",
-        lambda db_config, schema_migration_mode="v1_only": fake_repo,
+        lambda db_config, schema_migration_mode="v2_only": fake_repo,
     )
     monkeypatch.setattr(main, "CsvBackupStore", lambda csv_path: fake_backup)
 

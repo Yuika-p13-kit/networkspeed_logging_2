@@ -93,7 +93,7 @@ def load_app_config(base_dir: Path | str = ".") -> AppConfig:
 	web_host = env.get("NETWORK_SPEED_WEB_HOST", "0.0.0.0")
 	web_port = int(env.get("NETWORK_SPEED_WEB_PORT", "8000"))
 	schema_migration_mode = parse_schema_migration_mode(
-		env.get("NETWORK_SPEED_SCHEMA_MIGRATION_MODE", "v1_only")
+		env.get("NETWORK_SPEED_SCHEMA_MIGRATION_MODE", "v2_only")
 	)
 
 	return AppConfig(

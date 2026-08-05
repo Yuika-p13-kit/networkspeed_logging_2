@@ -78,7 +78,7 @@ def test_load_app_config_without_file_uses_env(tmp_path: Path, monkeypatch: pyte
     assert app_config.db.database == "netdb"
     assert app_config.device == "Mac"
     assert app_config.retry_max_attempts == 5
-    assert app_config.schema_migration_mode == "v1_only"
+    assert app_config.schema_migration_mode == "v2_only"
 
 
 def test_load_app_config_schema_migration_mode_valid(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

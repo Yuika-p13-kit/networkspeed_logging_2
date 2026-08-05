@@ -20,7 +20,7 @@ class AppConfig:
     retry_max_attempts: int = 5
     web_host: str = "0.0.0.0"
     web_port: int = 8000
-    schema_migration_mode: str = "v1_only"
+    schema_migration_mode: str = "v2_only"
 
 
 @dataclass(frozen=True)

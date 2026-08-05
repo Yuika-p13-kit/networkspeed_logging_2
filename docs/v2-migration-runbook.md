@@ -97,7 +97,7 @@ python scripts/monitor_dual_write.py --mode v2_only --json
 
 ```bash
 # v2_only 判定例
-python scripts/monitor_dual_write.py --mode v2_only --observation-days 7 --interval-minutes 10 --min-sample-coverage 0.99 --max-lag-seconds 300 --json
+python scripts/monitor_dual_write.py --mode v2_only --observation-days 7 --interval-minutes 10 --min-sample-coverage 0.99 --max-lag-seconds 900 --json
 ```
 
 > **注意**: `v2_only` 移行後は v1 への書き込みが止まるため、`--mode v2_only` を明示して判定軸を切り替えてください。

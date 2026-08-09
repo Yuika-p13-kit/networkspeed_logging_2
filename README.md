@@ -8,7 +8,9 @@
 1. Python 3.8 以上がインストール済みであること
 2. [`uv`](https://docs.astral.sh/uv/) がインストール済みであること
 3. PostgreSQL がセットアップ済みであること
-4. リポジトリルートに `database_info.txt` が存在すること（形式: `host=xxx\npassword=xxx\nuser=xxx\npassword=xxx`）
+4. リポジトリルートに `database_info.txt` が存在すること（形式例: `host=xxx\ndbname=xxx\nuser=xxx\npassword=xxx`）
+
+注意: 機密情報（パスワード等）はリポジトリにコミットしないでください。代替として環境変数を使用すること（例: PGHOST, PGDATABASE, PGUSER, PGPASSWORD）を推奨します。
 
 ## セットアップ手順
 
@@ -65,7 +67,7 @@ uv run black src/ && uv run flake8 src/
 - スケジュール: 毎時 `:00/:10/:20/:30/:40/:50`
 - DB 書き込み失敗時: CSV 退避、起動時再投入後削除
 - 単位変換: bps → Mbps（小数点 3 桁）
-- `database_info.txt`: `key=value`（`host/database/user/password`）
+- `database_info.txt`: `key=value`（例: host, dbname, user, password）。機密情報はコミットしないでください。環境変数（PGHOST, PGDATABASE, PGUSER, PGPASSWORD）の使用を推奨します。
 - CSV 退避先: `network_speed_backup.csv`
 - 旧実装計測ライブラリ: `speedtest`
 - 実行ツールは iMac では `brew install speedtest` で入る `speedtest` を利用し、Raspberry Pi でも同じ `speedtest` CLI を使う（導入方法は環境依存）

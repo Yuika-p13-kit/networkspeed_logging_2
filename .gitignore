@@ -11,3 +11,7 @@ wheels/
 
 # 環境固有の設定ファイル（認証情報を含む）
 database_info.txt
+
+# ローカル運用・レビュー補助ファイル
+.gh-config/
+review.md

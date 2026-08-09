@@ -8,20 +8,19 @@
 1. Python 3.8 以上がインストール済みであること
 2. [`uv`](https://docs.astral.sh/uv/) がインストール済みであること
 3. PostgreSQL がセットアップ済みであること
-4. リポジトリルートに `database_info.txt` が存在すること（形式: `host=xxx\npassword=xxx\nuser=xxx\npassword=xxx`）
+4. リポジトリルートに `database_info.txt` が存在すること（形式例: `host=xxx\ndbname=xxx\nuser=xxx\npassword=xxx`）
+
+注意: 機密情報（パスワード等）はリポジトリにコミットしないでください。代替として環境変数を使用すること（例: PGHOST, PGDATABASE, PGUSER, PGPASSWORD）を推奨します。
 
 ## セットアップ手順
 
 ```bash
 # uv で Python 環境を初期化
 uv sync
-
-# PostgreSQL データベースとテーブルを初期化
-uv run python scripts/init_db.py
-
-# 既存の CSV バックアップがあれば復旧
-uv run python scripts/restore_backup.py
 ```
+
+テーブル初期化は運用環境の SQL 適用手順に従って実施してください。
+CSV バックアップの再投入はアプリ起動時に自動で実行されます。
 
 ## 実行方法
 
@@ -37,11 +36,12 @@ uv run python main.py
 
 - DB 接続エラー: `database_info.txt` の接続情報を確認
 - 計測失敗: ネットワーク接続を確認（自動リトライは最大 5 回実行）
-- CSV 退避ファイルが残っている: 手動で `uv run python scripts/restore_backup.py` を実行
+- CSV 退避ファイルが残っている: `uv run python main.py` の起動時再投入ログを確認
 
-v2 移行の検証・バックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
-dual_write 監視は `python scripts/monitor_dual_write.py` を利用してください。
-運用手順は `docs/v2-migration-runbook.md` の「Step 3: 監視フェーズ」を参照してください。
+v2_only 運用のバックフィル・切り戻し手順は `docs/v2-migration-runbook.md` を参照してください。
+本番は `network_speed_logs_v2` への `v2_only` 運用へ移行済みです。
+運用時の監視と 7 日判定は `python scripts/monitor_dual_write.py --mode v2_only ...` を利用してください。
+v1互換導線（`v1_only`）は切り戻し専用として一時的に維持し、`v2_only` の 7日判定で `decision=go` を2サイクル連続で満たした日から14日以内に段階的撤去を開始します。
 
 ## 開発環境整備
 
@@ -53,29 +53,21 @@ uv run pytest tests/
 uv run black src/ && uv run flake8 src/
 ```
 
-### 現在の実装準備状況
+### 現在の実装状況
 - 詳細要件: `docs/requirements.md`
 - 設計仕様（関数レベル）: `docs/design-spec.md`
 - テスト設計: `docs/test-design.md`
-- 最優先: 復旧フロー（計測リトライ / DB 障害時 CSV 退避・再投入）
+- 稼働中: `network_speed_logs_v2` への 10 分間隔書き込み
+- 維持中: 復旧フロー（計測リトライ / DB 障害時 CSV 退避・再投入）
 - 次段: 読み取り専用 API / ダッシュボード
 
-### 互換要件（抜粋）
-- テーブル: `network_speed_measurements`（既存流用）
+### 運用要件（抜粋）
+- 保存先テーブル: `network_speed_logs_v2`
 - 計測失敗時: 最大 5 回リトライ
 - スケジュール: 毎時 `:00/:10/:20/:30/:40/:50`
 - DB 書き込み失敗時: CSV 退避、起動時再投入後削除
 - 単位変換: bps → Mbps（小数点 3 桁）
-- `database_info.txt`: `key=value`（`host/database/user/password`）
+- `database_info.txt`: `key=value`（例: host, dbname, user, password）。機密情報はコミットしないでください。環境変数（PGHOST, PGDATABASE, PGUSER, PGPASSWORD）の使用を推奨します。
 - CSV 退避先: `network_speed_backup.csv`
 - 旧実装計測ライブラリ: `speedtest`
 - 実行ツールは iMac では `brew install speedtest` で入る `speedtest` を利用し、Raspberry Pi でも同じ `speedtest` CLI を使う（導入方法は環境依存）
-
-### 次の着手
-1. 設定層（`database_info.txt` 互換読み込み）
-2. PostgreSQL 永続化層
-3. CSV バックアップ層
-4. 計測層
-5. スケジューラ層
-6. `main.py` オーケストレーター化
-7. 読み取り専用 API / ダッシュボード

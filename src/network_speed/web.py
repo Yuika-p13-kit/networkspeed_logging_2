@@ -97,6 +97,11 @@ def create_app(repo: Any):
         if (from_ is not None) and (to_ is not None) and (from_ > to_):
             raise HTTPException(status_code=400, detail="from must be <= to")
 
+        # enforce maximum period (30 days)
+        if (from_ is not None) and (to_ is not None):
+            if (to_ - from_).total_seconds() > 30 * 24 * 3600:
+                raise HTTPException(status_code=400, detail="period must be <= 30 days")
+
         # prefer repo.fetch_history that accepts filtering/pagination
         try:
             if hasattr(repo, "fetch_history_with_filters"):
@@ -138,18 +143,22 @@ def create_app(repo: Any):
         if from_ > to_:
             raise HTTPException(status_code=400, detail="from must be <= to")
 
+        # enforce maximum period (30 days)
+        if (to_ - from_).total_seconds() > 30 * 24 * 3600:
+            raise HTTPException(status_code=400, detail="period must be <= 30 days")
+
         try:
             if hasattr(repo, "fetch_stats"):
                 stats = repo.fetch_stats(from_=from_, to_=to_)
             else:
                 # fallback: get a large slice and compute
                 if hasattr(repo, "fetch_history_with_filters"):
-                    total, records = repo.fetch_history_with_filters(from_=from_, to_=to_, limit=1000000, offset=0)
+                    total, records = repo.fetch_history_with_filters(from_=from_, to_=to_, limit=100000, offset=0)
                 elif hasattr(repo, "fetch_history"):
                     try:
-                        total, records = repo.fetch_history(from_=from_, to_=to_, limit=1000000, offset=0)  # type: ignore
+                        total, records = repo.fetch_history(from_=from_, to_=to_, limit=100000, offset=0)  # type: ignore
                     except TypeError:
-                        records = repo.fetch_history(1000000)
+                        records = repo.fetch_history(100000)
                         total = len(records)
                 else:
                     raise RuntimeError("repository does not implement history/stat retrieval")
@@ -171,12 +180,12 @@ def create_app(repo: Any):
                     uploads = [float(r.upload_mbps) for r in records]
                     stats = {
                         "count": count,
-                        "avg_download_mbps": sum(downloads) / count,
-                        "max_download_mbps": max(downloads),
-                        "min_download_mbps": min(downloads),
-                        "avg_upload_mbps": sum(uploads) / count,
-                        "max_upload_mbps": max(uploads),
-                        "min_upload_mbps": min(uploads),
+                        "avg_download_mbps": round(sum(downloads) / count, 3),
+                        "max_download_mbps": round(max(downloads), 3),
+                        "min_download_mbps": round(min(downloads), 3),
+                        "avg_upload_mbps": round(sum(uploads) / count, 3),
+                        "max_upload_mbps": round(max(uploads), 3),
+                        "min_upload_mbps": round(min(uploads), 3),
                     }
         except Exception as exc:
             raise HTTPException(status_code=500, detail="internal error") from exc

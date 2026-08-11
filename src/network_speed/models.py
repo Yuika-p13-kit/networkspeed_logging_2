@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime
+from typing import Optional
 
 
 @dataclass(frozen=True)
@@ -29,3 +30,5 @@ class MeasurementRecord:
     download_mbps: float
     upload_mbps: float
     device: str = "Mac"
+    status: Optional[str] = None
+    error_summary: Optional[str] = None

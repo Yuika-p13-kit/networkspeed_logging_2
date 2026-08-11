@@ -22,4 +22,4 @@ jobs:
         pip install fastapi[all] pytest requests
     - name: Run tests
       run: |
-        pytest -q || true
+        pytest -q

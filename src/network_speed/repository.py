@@ -140,7 +140,7 @@ class PostgresRepository:
 	def _latest_measurement_sql(self) -> str:
 		if self._schema_migration_mode == "v2_only":
 			return """
-			SELECT measured_at, download_mbps, upload_mbps, device
+			SELECT measured_at, download_mbps, upload_mbps, device, status, error
 			FROM network_speed_logs_v2
 			ORDER BY measured_at DESC
 			LIMIT 1
@@ -155,7 +155,7 @@ class PostgresRepository:
 	def _history_measurement_sql(self) -> str:
 		if self._schema_migration_mode == "v2_only":
 			return """
-			SELECT measured_at, download_mbps, upload_mbps, device
+			SELECT measured_at, download_mbps, upload_mbps, device, status, error
 			FROM network_speed_logs_v2
 			ORDER BY measured_at DESC
 			LIMIT %s
@@ -173,11 +173,19 @@ class PostgresRepository:
 		return self._connection
 
 	@staticmethod
-	def _row_to_record(row: tuple[Any, Any, Any, Any]) -> MeasurementRecord:
-		timestamp, download_mbps, upload_mbps, device = row
+	def _row_to_record(row: tuple[Any, ...]) -> MeasurementRecord:
+		# support both v1 (4 cols) and v2 (6 cols with status, error)
+		if len(row) >= 6:
+			timestamp, download_mbps, upload_mbps, device, status, error = row[:6]
+		else:
+			timestamp, download_mbps, upload_mbps, device = row[:4]
+			status = None
+			error = None
 		return MeasurementRecord(
 			timestamp=timestamp,
 			download_mbps=float(download_mbps),
 			upload_mbps=float(upload_mbps),
 			device=str(device),
+			status=status,
+			error_summary=error,
 		)

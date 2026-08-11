@@ -10,12 +10,15 @@ SRC_DIR = PROJECT_ROOT / "src"
 if str(SRC_DIR) not in sys.path:
     sys.path.insert(0, str(SRC_DIR))
 
+from threading import Thread
+
 from network_speed.backup import CsvBackupStore
 from network_speed.config import load_app_config
 from network_speed.measurement import MeasurementFailedError, measure_with_retry
 from network_speed.models import AppConfig
 from network_speed.repository import PostgresRepository
 from network_speed.scheduler import register_measurement_jobs, run_scheduler_loop
+from network_speed.web import create_app
 
 
 logger = logging.getLogger(__name__)
@@ -58,6 +61,7 @@ def run_measurement_cycle(
 
 def bootstrap_and_run(base_dir: str | Path = ".") -> None:
     import schedule
+    from uvicorn import Config, Server
 
     logging.basicConfig(
         level=logging.INFO,
@@ -80,6 +84,28 @@ def bootstrap_and_run(base_dir: str | Path = ".") -> None:
         logger.info("CSV再投入完了: %d件", replayed_count)
     except Exception as exc:
         logger.error("CSV再投入でエラー（継続します）: %s", exc)
+
+    # Web サーバー起動（別スレッド）
+    base_path = Path(base_dir)
+    static_dir = base_path / "src" / "network_speed" / "static"
+    template_dir = base_path / "src" / "network_speed" / "templates"
+    
+    web_app = create_app(repo, static_dir=static_dir, template_dir=template_dir)
+    config_uvicorn = Config(
+        app=web_app,
+        host=config.web_host,
+        port=config.web_port,
+        log_level="info",
+    )
+    server = Server(config_uvicorn)
+    
+    web_thread = Thread(target=server.run, daemon=True)
+    web_thread.start()
+    logger.info(
+        "Web サーバー起動: http://%s:%d",
+        config.web_host,
+        config.web_port,
+    )
 
     def scheduled_job() -> None:
         run_measurement_cycle(repo=repo, backup=backup, config=config)

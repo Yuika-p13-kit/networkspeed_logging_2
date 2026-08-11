@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional, List
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from pydantic import BaseModel
 import logging
 
@@ -63,14 +67,49 @@ def _record_to_dashboard(record: MeasurementRecord, status: str = "success", err
     )
 
 
-def create_app(repo: Any):
+def create_app(
+    repo: Any,
+    static_dir: Path | None = None,
+    template_dir: Path | None = None,
+):
     """Create FastAPI app for dashboard.
 
     repo is expected to provide at least fetch_latest() and fetch_history(...)
     For tests a lightweight mock object may be provided with the needed methods.
+    
+    Args:
+        repo: Repository instance for data access
+        static_dir: Path to static files directory (CSS, JS, images, etc.)
+        template_dir: Path to Jinja2 templates directory
     """
 
     app = FastAPI()
+
+    # Mount static files if directory exists
+    if static_dir and Path(static_dir).exists():
+        app.mount(
+            "/static",
+            StaticFiles(directory=str(static_dir)),
+            name="static",
+        )
+        _logger.info("Static files mounted: %s", static_dir)
+
+    # Setup Jinja2 templates if directory exists
+    templates = None
+    if template_dir and Path(template_dir).exists():
+        templates = Jinja2Templates(directory=str(template_dir))
+        _logger.info("Templates configured: %s", template_dir)
+
+    # Root endpoint: serve dashboard HTML
+    @app.get("/", response_class=HTMLResponse)
+    def dashboard(request: Request):
+        if templates is None:
+            return "<html><body><h1>Network Speed Dashboard</h1><p>API ready at /api/dashboard/latest</p></body></html>"
+        try:
+            return templates.TemplateResponse("dashboard.html", {"request": request})
+        except Exception as exc:
+            _logger.error("Failed to render dashboard template: %s", exc)
+            return f"<html><body><h1>Error</h1><p>{exc}</p></body></html>"
 
     # helper to get latest
     @app.get("/api/dashboard/latest", response_model=DashboardRecord)

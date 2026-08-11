@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, Optional
 
 from .models import DatabaseConfig, MeasurementRecord
 
@@ -244,3 +244,90 @@ class PostgresRepository:
 			"max_upload_mbps": round(float(max_u), 3) if max_u is not None else None,
 			"min_upload_mbps": round(float(min_u), 3) if min_u is not None else None,
 		}
+
+	def fetch_aggregates(self, from_, to_, group_by: Optional[str] = None, window: Optional[str] = None, metrics: Optional[list] = None, limit: int = 100, offset: int = 0) -> dict:
+		"""Return aggregates between from_ and to_.
+
+		Supported group_by values: None, 'hour', 'day', 'weekday', 'season'
+		Returns dict: {"group_by": str, "window": str|None, "rows": [ {"group": str, "download_avg": float, ...} ] }
+		"""
+		if from_ is None or to_ is None:
+			raise ValueError("from_ and to_ are required")
+
+		allowed = {None, 'hour', 'day', 'weekday', 'season'}
+		if group_by not in allowed:
+			raise ValueError(f"unsupported group_by: {group_by}")
+
+		connection = self._require_connection()
+		rows_out = []
+		with connection.cursor() as cursor:
+			if self._schema_migration_mode == "v2_only":
+				tbl_ts = 'measured_at'
+				tbl = 'network_speed_logs_v2'
+				dcol = 'download_mbps'
+				ucol = 'upload_mbps'
+			else:
+				tbl_ts = 'timestamp'
+				tbl = 'network_speed_measurements'
+				dcol = 'download_speed_Mbps'
+				ucol = 'upload_speed_Mbps'
+
+			if group_by is None:
+				# simple aggregate over period
+				query = f"SELECT date_trunc('second', {tbl_ts}) AS grp, AVG({dcol}), AVG({ucol}), COUNT(*) FROM {tbl} WHERE {tbl_ts} >= %s AND {tbl_ts} <= %s GROUP BY grp ORDER BY grp LIMIT %s OFFSET %s"
+				cursor.execute(query, (from_, to_, limit, offset))
+				for r in cursor.fetchall():
+					grp, avg_d, avg_u, cnt = r
+					rows_out.append({
+						"group": grp.isoformat() if hasattr(grp, 'isoformat') else str(grp),
+						"count": int(cnt),
+						"download_avg": round(float(avg_d), 3) if avg_d is not None else None,
+						"upload_avg": round(float(avg_u), 3) if avg_u is not None else None,
+					})
+			elif group_by == 'hour':
+				query = f"SELECT date_trunc('hour', {tbl_ts}) AS grp, AVG({dcol}), AVG({ucol}), COUNT(*) FROM {tbl} WHERE {tbl_ts} >= %s AND {tbl_ts} <= %s GROUP BY grp ORDER BY grp LIMIT %s OFFSET %s"
+				cursor.execute(query, (from_, to_, limit, offset))
+				for r in cursor.fetchall():
+					grp, avg_d, avg_u, cnt = r
+					rows_out.append({
+						"group": grp.isoformat(),
+						"count": int(cnt),
+						"download_avg": round(float(avg_d), 3) if avg_d is not None else None,
+						"upload_avg": round(float(avg_u), 3) if avg_u is not None else None,
+					})
+			elif group_by == 'day':
+				query = f"SELECT date_trunc('day', {tbl_ts}) AS grp, AVG({dcol}), AVG({ucol}), COUNT(*) FROM {tbl} WHERE {tbl_ts} >= %s AND {tbl_ts} <= %s GROUP BY grp ORDER BY grp LIMIT %s OFFSET %s"
+				cursor.execute(query, (from_, to_, limit, offset))
+				for r in cursor.fetchall():
+					grp, avg_d, avg_u, cnt = r
+					rows_out.append({
+						"group": grp.date().isoformat() if hasattr(grp, 'date') else str(grp),
+						"count": int(cnt),
+						"download_avg": round(float(avg_d), 3) if avg_d is not None else None,
+						"upload_avg": round(float(avg_u), 3) if avg_u is not None else None,
+					})
+			elif group_by == 'weekday':
+				query = f"SELECT EXTRACT(dow FROM {tbl_ts}) AS grp, AVG({dcol}), AVG({ucol}), COUNT(*) FROM {tbl} WHERE {tbl_ts} >= %s AND {tbl_ts} <= %s GROUP BY grp ORDER BY grp LIMIT %s OFFSET %s"
+				cursor.execute(query, (from_, to_, limit, offset))
+				for r in cursor.fetchall():
+					grp, avg_d, avg_u, cnt = r
+					rows_out.append({
+						"group": int(grp),
+						"count": int(cnt),
+						"download_avg": round(float(avg_d), 3) if avg_d is not None else None,
+						"upload_avg": round(float(avg_u), 3) if avg_u is not None else None,
+					})
+			elif group_by == 'season':
+				# season as YYYY-Qn derived from month
+				query = f"SELECT (EXTRACT(year FROM {tbl_ts}) || '-Q' || ((EXTRACT(month FROM {tbl_ts})-1)/3 + 1))::text AS grp, AVG({dcol}), AVG({ucol}), COUNT(*) FROM {tbl} WHERE {tbl_ts} >= %s AND {tbl_ts} <= %s GROUP BY grp ORDER BY grp LIMIT %s OFFSET %s"
+				cursor.execute(query, (from_, to_, limit, offset))
+				for r in cursor.fetchall():
+					grp, avg_d, avg_u, cnt = r
+					rows_out.append({
+						"group": str(grp),
+						"count": int(cnt),
+						"download_avg": round(float(avg_d), 3) if avg_d is not None else None,
+						"upload_avg": round(float(avg_u), 3) if avg_u is not None else None,
+					})
+
+		return {"group_by": group_by, "window": window, "rows": rows_out}

@@ -238,3 +238,79 @@
 - データ保持期間・大規模運用は別途検討。
 
 ※ 本セクションは実装着手前の最終仕様候補。実装中に小さな修正が出る可能性があるため、Critic による最終承認を必須とする。
+
+
+## 付録: repository.fetch_stats と /api/dashboard/aggregates の実装・運用方針
+
+### 目的
+- DB 側での集計を repository 層に実装して web 層の大規模フォールバックを避ける。
+- 将来的に `/api/dashboard/aggregates` を追加し、移動平均・1h平均・曜日/時間帯別集計・シーズン別統計を効率的に返却するための基盤を整備する。
+
+### repository.fetch_stats の要件（今回実装した補足）
+- シグネチャ: fetch_stats(from_, to_) -> dict
+- 返却項目（必須）: count, avg_download_mbps, max_download_mbps, min_download_mbps, avg_upload_mbps, max_upload_mbps, min_upload_mbps
+- 動作: v2 スキーマ（network_speed_logs_v2.measured_at）を優先、存在しない場合は v1（network_speed_measurements.timestamp）を参照する。
+- 数値は小数点3桁で丸めて返す。件数が 0 の場合は各 avg/max/min を null にする。
+- SQL 実行はパラメータバインド（%s）を使用し、時間範囲フィルタでインデックスを効かせる。
+
+### /api/dashboard/aggregates 設計方針（案）
+- エンドポイント: GET /api/dashboard/aggregates
+- 主なクエリパラメータ:
+  - from (required, ISO8601 UTC)
+  - to (required, ISO8601 UTC)
+  - window (optional, e.g. "1h", "30m" for 移動平均のウィンドウ)
+  - group_by (optional, values: "hour","weekday","day","season")
+  - metrics (optional, comma-separated: download_avg,download_max,upload_avg,...)
+  - limit/offset は集計結果行数制御用（主に group_by 時）
+- レスポンス（例）:
+  {
+    "window": "1h",
+    "group_by": "hour",
+    "rows": [ { "group": "2026-08-11T07:00:00Z", "download_avg": 95.123, "upload_avg": 12.345, "count": 6 }, ... ]
+  }
+
+### 実装ヒント（SQL）
+- 1h平均・移動平均:
+  - PostgreSQL の window 関数を利用: AVG(download_mbps) OVER (ORDER BY measured_at RANGE BETWEEN '1 hour' PRECEDING AND CURRENT ROW)
+  - ただし大規模データでは性能問題になるため、事前に集計テーブル（materialized view）やバケット集計（date_trunc('hour', measured_at)）を使うことを推奨。
+- 曜日/時間帯集計:
+  - EXTRACT(dow FROM measured_at) / EXTRACT(hour FROM measured_at) を GROUP BY して集計。
+- シーズン別:
+  - 実装側で season キー（例: YYYY-Qn, YYYY-MM など）を生成して GROUP BY するか、別テーブルでシーズン定義を提供する。
+
+### 性能と保護
+- 最大期間: API 側で 30 日制限を設ける（既定）。長期間はバッチ/集計用 API を別途用意。
+- レコード読み込み上限: fetch_history のフォールバックでの読み込み上限は 100,000 とし、fetch_stats / aggregates は DB 集計によりこの制約を回避する。
+- キャッシュ: 集計は TTL キャッシュ（例: 60s〜300s）を導入して負荷を抑えることを推奨。
+- 認証: 運用時は IP 制限または基本認証を推奨。
+
+### テスト方針
+- repository.fetch_stats の単体テストを追加:
+  - from/to で期間フィルタが適切に効くこと
+  - v1 と v2 の両方のスキーマで期待値が返ること（モックカーソルまたはテスト DB）
+  - count=0 の場合の戻り値を検証
+- web 層の aggregates エンドポイントの単体テスト:
+  - パラメータ検証（from/to 必須、期間上限、window/group_by のバリデーション）
+  - DB モックを使ったレスポンス検証
+- CI では uv 環境を使って pytest を実行する手順を README/CI に記載しておく（下記参照）。
+
+### CI / ローカルデバッグ手順（推奨）
+1. GitHub Actions の実行ログ確認
+   - `gh run list --repo <owner>/<repo> --limit 5` で最近の run を確認
+   - 失敗している run の ID を取得し `gh run view <id> --repo <owner>/<repo> --log` でログを詳細に見る
+2. ローカル再現 (uv を推奨):
+   - uv が利用可能な環境では `uv pip install <deps>` を使ってテスト依存を注入
+   - その後 `uv run python -m pytest -q` でテスト実行
+   - uv が無い場合は virtualenv を作って `python -m venv .venv && source .venv/bin/activate && pip install -r requirements-dev.txt` 等で再現
+3. テスト失敗時のログ取り
+   - pytest での失敗は -k/ -q などで再現し、`pytest tests/test_xxx.py::test_name -q -k` で個別実行
+   - FastAPI のテストで失敗する場合、`print(response.text)` を追加してレスポンスボディを確認
+4. 修正後は該当ブランチへコミットし push すると CI が再実行される
+
+### 運用上の注意
+- CI の警告（例: httpx/Starlette の deprecation）は将来の互換性問題を示すため、影響範囲が小さいなら後回しにしても良いが、主要ライブラリ更新時にまとめて対応することを推奨する。
+- 本ドキュメントは実装とともに逐次更新すること。特に aggregates の SQL 実装が入ったら、本付録の SQL ヒントを実装コードに合わせて追記する。
+
+---
+
+以上を docs に追記しました。実装や CI の結果に応じて追記・修正を行いやすいよう、テスト手順とローカル再現手順を記載しています。

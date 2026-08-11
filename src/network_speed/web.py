@@ -39,6 +39,19 @@ class StatsResponse(BaseModel):
     min_upload_mbps: Optional[float]
 
 
+class AggregatesRow(BaseModel):
+    group: Any
+    count: int
+    download_avg: Optional[float]
+    upload_avg: Optional[float]
+
+
+class AggregatesResponse(BaseModel):
+    group_by: Optional[str]
+    window: Optional[str]
+    rows: list[AggregatesRow]
+
+
 def _record_to_dashboard(record: MeasurementRecord, status: str = "success", error_summary: Optional[str] = None) -> DashboardRecord:
     return DashboardRecord(
         timestamp=record.timestamp,
@@ -197,5 +210,63 @@ def create_app(repo: Any):
             raise HTTPException(status_code=500, detail="internal error") from exc
 
         return StatsResponse(**stats)
+
+    @app.get("/api/dashboard/aggregates", response_model=AggregatesResponse)
+    def dashboard_aggregates(
+        from_: Optional[datetime] = Query(None, alias="from"),
+        to_: Optional[datetime] = Query(None, alias="to"),
+        group_by: Optional[str] = Query(None),
+        window: Optional[str] = Query(None),
+        limit: int = Query(100, ge=1, le=1000),
+        offset: int = Query(0, ge=0),
+    ):
+        if from_ is None or to_ is None:
+            raise HTTPException(status_code=400, detail="from and to are required")
+        if from_ > to_:
+            raise HTTPException(status_code=400, detail="from must be <= to")
+        # enforce maximum period (30 days)
+        if (to_ - from_).total_seconds() > 30 * 24 * 3600:
+            raise HTTPException(status_code=400, detail="period must be <= 30 days")
+
+        allowed = {None, 'hour', 'day', 'weekday', 'season'}
+        if group_by not in allowed:
+            raise HTTPException(status_code=400, detail=f"unsupported group_by: {group_by}")
+
+        try:
+            if hasattr(repo, "fetch_aggregates"):
+                res = repo.fetch_aggregates(from_=from_, to_=to_, group_by=group_by, window=window, limit=limit, offset=offset)
+                # normalize rows to AggregatesRow list
+                rows = [AggregatesRow(**r) for r in res.get('rows', [])]
+                return AggregatesResponse(group_by=res.get('group_by'), window=res.get('window'), rows=rows)
+            else:
+                # fallback: use fetch_history limited and compute simple hourly buckets
+                if hasattr(repo, "fetch_history_with_filters"):
+                    total, records = repo.fetch_history_with_filters(from_=from_, to_=to_, limit=100000, offset=0)
+                elif hasattr(repo, "fetch_history"):
+                    try:
+                        total, records = repo.fetch_history(from_=from_, to_=to_, limit=100000, offset=0)  # type: ignore
+                    except TypeError:
+                        records = repo.fetch_history(100000)
+                        total = len(records)
+                else:
+                    raise RuntimeError("repository does not implement history/stat retrieval")
+
+                # naive grouping by hour if requested
+                buckets: dict[str, list] = {}
+                for r in records:
+                    key = r.timestamp.replace(minute=0, second=0, microsecond=0).isoformat()
+                    buckets.setdefault(key, []).append(r)
+
+                rows = []
+                for k in sorted(buckets.keys()):
+                    group_recs = buckets[k]
+                    downloads = [float(x.download_mbps) for x in group_recs]
+                    uploads = [float(x.upload_mbps) for x in group_recs]
+                    rows.append(AggregatesRow(group=k, count=len(group_recs), download_avg=round(sum(downloads)/len(downloads),3), upload_avg=round(sum(uploads)/len(uploads),3)))
+
+                return AggregatesResponse(group_by=group_by, window=window, rows=rows)
+        except Exception as exc:
+            _logger.exception("error while computing aggregates")
+            raise HTTPException(status_code=500, detail="internal error") from exc
 
     return app

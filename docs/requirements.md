@@ -131,78 +131,107 @@
 - `old_src/test.py` で CSV 名が `network_speed_backup.csv` であることを確認。
 - `old_src/SpeedTest_chatgpt.py` で `speedtest` 利用を確認。
 
-## 12. ダッシュボード要件定義（初版）
+## 12. ダッシュボード要件定義（確定版）
 
 ### 12.1 目的
 - 保存済み計測結果をブラウザで可視化し、運用者が回線状態と異常兆候を素早く把握できるようにする。
-- 復旧性の担保（計測リトライ、CSV 退避・再投入）を優先し、表示/API はその上に読み取り専用で提供する。
+- 復旧フロー（計測リトライ、CSV 退避・再投入）を最優先し、表示/API は読み取り専用として実装する。
 
 ### 12.2 対象ユーザー
 - 日常運用担当者（計測結果の確認、障害一次切り分け）。
 - 保守担当者（期間比較、復旧後の取り込み確認）。
 
-### 12.3 ユースケース
-- 直近の最新計測値を 1 画面で確認する。
-- 任意期間の履歴を抽出し、回線低下や欠測を確認する。
-- 簡易統計で期間内の傾向（平均・最大・最小）を把握する。
-- 失敗・復旧関連ステータスを確認し、運用判断に使う。
+### 12.3 ユースケース（優先順）
+1. 直近の最新計測値を確認する（速やかな障害判別）。
+2. 指定期間の履歴を取得して傾向を確認する（ダンプ／比較）。
+3. 簡易統計（平均・最大・最小・件数）で期間傾向を把握する。
+4. リカバリ状況（CSV 未投入データ）を可視化する。
 
-### 12.4 機能要件
-- 一覧表示: 新しい順で履歴を表示できること（timestamp, download, upload, device, status を表示）。
-- 期間フィルタ: 開始日時・終了日時で絞り込みできること。
-- 最新値表示: 直近 1 件の download/upload/timestamp/device/status を常時表示できること。
-- 簡易統計: フィルタ結果に対して件数、平均、最大、最小を表示できること（download/upload）。
-- エラーステータス表示: 計測失敗または DB 書き込み失敗・復旧処理中を識別できる表示を提供すること。
+### 12.4 機能要件（確定）
+- 最新値表示: `/api/dashboard/latest` から表示。表示項目: timestamp (ISO8601 UTC), download_speed_mbps (numeric, 3dp), upload_speed_mbps, device, status, error_summary (optional)
+- 履歴一覧: `/api/dashboard/history` で取得。並び: 新しい順。表示カラム: timestamp, download_speed_mbps, upload_speed_mbps, device, status
+- 期間フィルタ: `from` / `to`（ISO8601 UTC）で絞り込み可能。`from` <= `to` を必須チェック。
+- ページネーション: `limit` (default 100, max 1000) と `offset` をサポート。
+- 簡易統計: `/api/dashboard/stats` が count, avg_download_mbps, max_download_mbps, min_download_mbps, avg_upload_mbps, max_upload_mbps, min_upload_mbps を返す。
+- エラーステータス表示: `status` により色分けやアイコン表示を行う（運用側の説明参照）。
 
-### 12.5 API 要件（読み取り専用）
-- 前提: すべて GET のみ、更新系 API は提供しない。
-- 想定エンドポイント:
-  - `GET /api/dashboard/latest`
-  - `GET /api/dashboard/history?from=...&to=...&limit=...`
-  - `GET /api/dashboard/stats?from=...&to=...`
-- 既存 API との関係:
-  - 正式 API: `/api/dashboard/*` を正式運用経路とする。
-  - 互換 API（deprecate 予定）: `GET /api/latest` と `GET /api/history` は互換維持のため残す。
-  - 見直し時期: 互換 API は 2026-12-31 までに廃止可否を再判定し、以降の保持有無を issue で明文化する。
-- レスポンス項目:
-  - latest/history 共通: timestamp, download_speed_mbps, upload_speed_mbps, device, status
-  - stats: count, avg_download_mbps, max_download_mbps, min_download_mbps, avg_upload_mbps, max_upload_mbps, min_upload_mbps
-  - エラー表示補助: error_summary（存在する場合のみ）
+### 12.5 API 仕様（詳細）
+共通ルール:
+- 全て GET。認証は現段階では非対象（運用で限定公開することを推奨）。
+- 時刻の扱い: DB は UTC で保存する。API 入力は UTC の ISO8601（例: 2026-08-09T00:00:00Z）。表示は UTC を基本とし、UI 側でローカル表示に変換可能。
+- 上限・保護: `from`/`to` の期間は最大 30 日（ポリシーで変更可）。`limit` の最大は 1000（既定 100）。不正なパラメータは 400 を返す。
 
-### 12.5.1 `status` / `error_summary` の生成ルール（DB スキーマ変更なし）
-- `status` の値集合は `success` / `measurement_failed` / `db_write_failed` / `recovery_pending` / `unknown` とする。
-- `status` 判定優先順:
-  1) 取得元に `status` 列があり値が入っている場合はその値を返す（v2 列優先）。
-  2) 1) が使えない場合は暫定判定とし、download/upload が両方数値なら `success`、いずれか欠損なら `measurement_failed`。
-  3) 退避 CSV が存在し未再投入データがある場合は `recovery_pending` を優先表示する（最新表示/API 応答時点の運用状態として扱う）。
-  4) 上記で判定不能な場合は `unknown`。
-- `error_summary` 判定:
-  - 取得元にエラー要約情報（例: `error` 列）がある場合のみ返す。
-  - エラー要約情報が無い場合、`/api/dashboard/*` では `null` を返すか項目を省略する。
-  - 互換 API（`/api/latest` / `/api/history`）では `error_summary` を省略可とする。
+エンドポイント:
+1) GET /api/dashboard/latest
+- Query: none
+- Response (200):
+  {
+    "timestamp": "2026-08-09T12:00:00Z",
+    "download_speed_mbps": 120.123,
+    "upload_speed_mbps": 20.456,
+    "device": "Mac",
+    "status": "success",
+    "error_summary": null
+  }
+- Errors: 500 on server error (ログ出力)
 
-### 12.6 非機能要件
-- 可用性: 計測処理と独立して表示/API が参照可能であり、表示機能障害が計測停止要因にならないこと。
-- 応答性能目標: 母集団 10,000 件の保存データで、同一条件の連続 30 リクエスト計測時に、最新値 API は 95 パーセンタイル 500ms 以内、履歴/統計 API は 95 パーセンタイル 2 秒以内（履歴は `limit=1000` 条件）。
-- 運用性: 障害切り分けに必要なアクセスログ・アプリログを最小限出力すること。
-- セキュリティ最低限: 外部公開しない前提でも入力パラメータ検証を行い、不正な期間・limit を拒否すること。
+2) GET /api/dashboard/history?from=...&to=...&limit=...&offset=...
+- Query:
+  - from (ISO8601, optional)
+  - to (ISO8601, optional)
+  - limit (int, optional, default=100, max=1000)
+  - offset (int, optional, default=0)
+- Response (200):
+  {
+    "total": 1234,
+    "limit": 100,
+    "offset": 0,
+    "records": [ { /* same shape as latest */ } ]
+  }
 
-### 12.7 制約
-- `v2_only` 前提で要件を定義し、v1 互換整理方針と矛盾しないこと。
-- 実装順は「復旧フロー優先（計測/CSV/再投入の担保）」を維持し、表示/API は後段とすること。
-- DB スキーマは変更しないこと（既存テーブル利用を前提に要件化）。
-- 既存仕様（10 分間隔、最大 5 回リトライ、CSV 退避復旧）を壊さないこと。
+3) GET /api/dashboard/stats?from=...&to=...
+- Query: from, to (required together)
+- Response (200):
+  {
+    "count": 120,
+    "avg_download_mbps": 95.123,
+    "max_download_mbps": 200.000,
+    "min_download_mbps": 10.000,
+    "avg_upload_mbps": 15.456,
+    "max_upload_mbps": 40.000,
+    "min_upload_mbps": 1.234
+  }
 
-### 12.8 受け入れ基準
-- 入力条件: 期間指定なしで `GET /api/dashboard/latest` と `GET /api/dashboard/history` を実行した場合、期待結果: HTTP 200 で latest 1 件と既定件数内の履歴（新しい順）が返る。失敗時挙動: パラメータ不備以外で 5xx を返した場合は障害ログを出力し、計測ジョブ側の継続性を維持する。
-- 入力条件: `from` / `to` / `limit` を指定して `GET /api/dashboard/history` と `GET /api/dashboard/stats` を実行した場合、期待結果: 履歴件数・統計値が同条件の DB 集計結果と一致する。失敗時挙動: `from > to` または上限超過 `limit` は HTTP 400 で拒否する。
-- 入力条件: status 列ありデータと status 列なし相当データの双方を参照した場合、期待結果: status は 12.5.1 の優先順で判定される。失敗時挙動: 判定不能時は `unknown` を返す。
-- 入力条件: error 要約情報が無いデータを参照した場合、期待結果: `error_summary` は `null` または省略になる。失敗時挙動: 項目欠如を理由に API 全体をエラー終了しない。
-- 入力条件: 表示/API プロセス障害を発生させた場合、期待結果: 次回計測（10 分間隔）と失敗時 CSV 退避・再投入フローが継続する。
-- 入力条件: 本要件対応後にマイグレーション差分を確認した場合、期待結果: DB スキーマ変更を伴う差分が存在しない。
+互換性:
+- 既存 `/api/latest` と `/api/history` は引き続き維持する（当面はラッパー実装）。将来廃止予定は docs に記載。
 
-### 12.9 未決事項
-- UI 詳細（グラフ種類、配色、モバイル表示優先度）。
-- 認証要否（ローカル限定運用のままか、将来認証導入するか）。
-- 表示/API のデータ保存期間と最大取得件数ポリシー。
-- status/error_summary の最終マッピング規則（既存データとの差分吸収方法）。
+### 12.5.1 status / error_summary（明確化）
+- status 値集合: `success`, `measurement_failed`, `db_write_failed`, `recovery_pending`, `unknown`。
+- 判定ロジック（優先順）:
+  1) DB 側に `status` 列が存在し値が入っている場合はそれを返す（v2 優先）。
+  2) 1 が無い場合は measurement 値で判定: download と upload が数値 → `success`、どちらか欠損 → `measurement_failed`。
+  3) CSV 退避ファイルに未投入レコードがあり該当データが再投入されていない場合は `recovery_pending` を優先表示（API は運用状態として返す）。
+  4) 判定不能なら `unknown`。
+- error_summary: 文字列（短文、例: "DB timeout during insert"). 存在しない場合は null またはフィールド省略。
+
+### 12.6 非機能要件（追記）
+- 性能目標: 小規模運用（10k レコード程度）に対して最新値 API は 95p 500ms、履歴/統計は 95p 2s を目安とする。大規模対応はキャッシュ/集計テーブルで別タスク。
+- ロギング: API は INFO レベルでリクエスト要約、ERROR で例外詳細（但し機密情報はログ出力しない）。
+- セキュリティ: 出力は必ずエスケープ。公開前にアクセス制限を設けること。
+
+### 12.7 制約（再掲）
+- DB スキーマは変更しない。
+- 復旧フロー優先。表示/API は読み取り専用で実装。
+
+### 12.8 受け入れ基準（追記）
+- ドキュメント: API スキーマ（例含む）が docs/requirements.md に記載され、Critic のレビューが完了していること。
+- API: `/api/dashboard/latest` が既存 `/api/latest` と同等のデータを返すこと（互換テスト）。
+- テスト: pytest で読み取りエンドポイントの単体テスト・統合テストが追加され、ローカルで成功すること。
+- UI: シンプルな HTML ダッシュボードで最新値・履歴取得が動作すること（手動確認で可）。
+
+### 12.9 未決事項（残す）
+- グラフ種類、配色、モバイル優先度は別タスクで決定。
+- 認証方針は運用チームで決定（ドキュメントに注意喚起を追加）。
+- データ保持期間・大規模運用は別途検討。
+
+※ 本セクションは実装着手前の最終仕様候補。実装中に小さな修正が出る可能性があるため、Critic による最終承認を必須とする。

@@ -48,7 +48,6 @@ def test_latest_returns_expected_shape():
     assert r.status_code == 200
     data = r.json()
     # accept either 'Z' or '+00:00' ISO formats
-    from datetime import datetime
     parsed_ts = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
     assert parsed_ts == ts
     assert abs(data["download_speed_mbps"] - 120.123) < 0.001

@@ -47,7 +47,10 @@ def test_latest_returns_expected_shape():
     r = client.get("/api/dashboard/latest")
     assert r.status_code == 200
     data = r.json()
-    assert data["timestamp"] == "2026-08-09T12:00:00+00:00"
+    # accept either 'Z' or '+00:00' ISO formats
+    from datetime import datetime
+    parsed_ts = datetime.fromisoformat(data["timestamp"].replace("Z", "+00:00"))
+    assert parsed_ts == ts
     assert abs(data["download_speed_mbps"] - 120.123) < 0.001
     assert abs(data["upload_speed_mbps"] - 20.457) < 0.001
     assert data["device"] == "Mac"

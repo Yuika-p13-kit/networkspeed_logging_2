@@ -522,3 +522,164 @@ async function initializeDashboard() {
 // ============================================================================
 
 document.addEventListener('DOMContentLoaded', initializeDashboard);
+
+// ============================================================================
+// Aggregates & Charts
+// ============================================================================
+
+async function fetchAggregates({ from, to, groupBy, limit = 100, offset = 0 }) {
+    try {
+        const params = new URLSearchParams();
+        if (from) params.append('from', from);
+        if (to) params.append('to', to);
+        if (groupBy) params.append('group_by', groupBy);
+        params.append('limit', limit);
+        params.append('offset', offset);
+
+        const response = await fetch(`/api/dashboard/aggregates?${params.toString()}`);
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}`);
+        }
+        return await response.json();
+    } catch (error) {
+        showError(`Failed to fetch aggregates: ${error.message}`);
+        throw error;
+    }
+}
+
+function updateAggregatesChart(data) {
+    const container = document.getElementById('chart-container');
+    const noDataMsg = document.getElementById('no-aggregates-message');
+    const chartError = document.getElementById('chart-error');
+
+    if (!data || !data.rows || data.rows.length === 0) {
+        container.style.display = 'none';
+        noDataMsg.style.display = 'block';
+        chartError.style.display = 'none';
+        return;
+    }
+
+    container.style.display = 'block';
+    noDataMsg.style.display = 'none';
+    chartError.style.display = 'none';
+
+    const groupBy = data.group_by || 'none';
+    let trace, layout;
+
+    if (groupBy === 'weekday') {
+        const weekdayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const downloadAvgs = data.rows.map(r => r.download_avg || 0);
+        const uploadAvgs = data.rows.map(r => r.upload_avg || 0);
+        const groups = data.rows.map((r, i) => weekdayNames[parseInt(r.group)] || `Day ${r.group}`);
+
+        const trace1 = { x: groups, y: downloadAvgs, name: 'Download (Mbps)', type: 'bar', marker: { color: 'rgba(54, 162, 235, 0.7)' } };
+        const trace2 = { x: groups, y: uploadAvgs, name: 'Upload (Mbps)', type: 'bar', marker: { color: 'rgba(75, 192, 75, 0.7)' } };
+        layout = {
+            title: 'Weekday Pattern (Avg Speed by Day of Week)',
+            xaxis: { title: 'Day of Week' },
+            yaxis: { title: 'Speed (Mbps)' },
+            barmode: 'group',
+            hovermode: 'x'
+        };
+        Plotly.newPlot('chart-container', [trace1, trace2], layout, { responsive: true });
+    } else if (groupBy === 'hour') {
+        const downloadAvgs = data.rows.map(r => r.download_avg || 0);
+        const uploadAvgs = data.rows.map(r => r.upload_avg || 0);
+        const timestamps = data.rows.map(r => {
+            const dt = new Date(r.group);
+            return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        });
+
+        const downloadTrace = { x: timestamps, y: downloadAvgs, name: 'Download (Mbps)', type: 'scatter', mode: 'lines+markers', line: { color: 'rgb(54, 162, 235)', width: 2 } };
+        const uploadTrace = { x: timestamps, y: uploadAvgs, name: 'Upload (Mbps)', type: 'scatter', mode: 'lines+markers', line: { color: 'rgb(75, 192, 75)', width: 2 } };
+        layout = {
+            title: 'Hourly Trend',
+            xaxis: { title: 'Timestamp (UTC)' },
+            yaxis: { title: 'Speed (Mbps)' },
+            hovermode: 'x unified'
+        };
+        Plotly.newPlot('chart-container', [downloadTrace, uploadTrace], layout, { responsive: true });
+    } else if (groupBy === 'day') {
+        const downloadAvgs = data.rows.map(r => r.download_avg || 0);
+        const uploadAvgs = data.rows.map(r => r.upload_avg || 0);
+        const dates = data.rows.map(r => {
+            const dt = new Date(r.group);
+            return dt.toISOString().split('T')[0];
+        });
+
+        const downloadTrace = { x: dates, y: downloadAvgs, name: 'Download (Mbps)', type: 'scatter', mode: 'lines+markers', fill: 'tozeroy', line: { color: 'rgb(54, 162, 235)', width: 2 } };
+        const uploadTrace = { x: dates, y: uploadAvgs, name: 'Upload (Mbps)', type: 'scatter', mode: 'lines+markers', fill: 'tozeroy', line: { color: 'rgb(75, 192, 75)', width: 2 } };
+        layout = {
+            title: 'Daily Trend',
+            xaxis: { title: 'Date (UTC)' },
+            yaxis: { title: 'Speed (Mbps)' },
+            hovermode: 'x unified'
+        };
+        Plotly.newPlot('chart-container', [downloadTrace, uploadTrace], layout, { responsive: true });
+    } else if (groupBy === 'season') {
+        const downloadAvgs = data.rows.map(r => r.download_avg || 0);
+        const uploadAvgs = data.rows.map(r => r.upload_avg || 0);
+        const seasons = data.rows.map(r => r.group);
+
+        const trace1 = { x: seasons, y: downloadAvgs, name: 'Download (Mbps)', type: 'bar', marker: { color: 'rgba(54, 162, 235, 0.7)' } };
+        const trace2 = { x: seasons, y: uploadAvgs, name: 'Upload (Mbps)', type: 'bar', marker: { color: 'rgba(75, 192, 75, 0.7)' } };
+        layout = {
+            title: 'Seasonal Trend',
+            xaxis: { title: 'Season' },
+            yaxis: { title: 'Speed (Mbps)' },
+            barmode: 'group'
+        };
+        Plotly.newPlot('chart-container', [trace1, trace2], layout, { responsive: true });
+    } else {
+        const timestamps = data.rows.map(r => {
+            const dt = new Date(r.group);
+            return dt.toLocaleString('en-US', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+        });
+        const downloadAvgs = data.rows.map(r => r.download_avg || 0);
+        const uploadAvgs = data.rows.map(r => r.upload_avg || 0);
+
+        const downloadTrace = { x: timestamps, y: downloadAvgs, name: 'Download (Mbps)', type: 'scatter', mode: 'lines+markers', line: { color: 'rgb(54, 162, 235)', width: 2 } };
+        const uploadTrace = { x: timestamps, y: uploadAvgs, name: 'Upload (Mbps)', type: 'scatter', mode: 'lines+markers', line: { color: 'rgb(75, 192, 75)', width: 2 } };
+        layout = {
+            title: 'Speed Over Time',
+            xaxis: { title: 'Timestamp (UTC)' },
+            yaxis: { title: 'Speed (Mbps)' },
+            hovermode: 'x unified'
+        };
+        Plotly.newPlot('chart-container', [downloadTrace, uploadTrace], layout, { responsive: true });
+    }
+}
+
+// Load aggregates chart event listener
+document.addEventListener('DOMContentLoaded', () => {
+    const loadBtn = document.getElementById('load-aggregates-btn');
+    const typeSelect = document.getElementById('aggregate-type');
+    
+    if (loadBtn) {
+        loadBtn.addEventListener('click', async () => {
+            const groupBy = typeSelect.value;
+            if (!groupBy) {
+                alert('Please select a view type');
+                return;
+            }
+
+            document.getElementById('aggregates-loading').style.display = 'block';
+            document.getElementById('chart-container').style.display = 'none';
+            document.getElementById('no-aggregates-message').style.display = 'none';
+            document.getElementById('chart-error').style.display = 'none';
+
+            try {
+                const from = getDatetimeLocalAsISO('stats-from') || new Date(Date.now() - 30*24*60*60*1000).toISOString();
+                const to = getDatetimeLocalAsISO('stats-to') || new Date().toISOString();
+                const data = await fetchAggregates({ from, to, groupBy, limit: 500 });
+                updateAggregatesChart(data);
+            } catch (error) {
+                console.error('Error loading aggregates:', error);
+                document.getElementById('chart-error').textContent = `Error: ${error.message}`;
+                document.getElementById('chart-error').style.display = 'block';
+            } finally {
+                document.getElementById('aggregates-loading').style.display = 'none';
+            }
+        });
+    }
+});

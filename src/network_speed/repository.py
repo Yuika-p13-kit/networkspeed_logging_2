@@ -189,3 +189,58 @@ class PostgresRepository:
 			status=status,
 			error_summary=error,
 		)
+
+	def fetch_stats(self, from_, to_) -> dict:
+		"""Return aggregated stats between from_ and to_.
+
+		Returns dict with keys: count, avg_download_mbps, max_download_mbps, min_download_mbps,
+		avg_upload_mbps, max_upload_mbps, min_upload_mbps
+		"""
+		if from_ is None or to_ is None:
+			raise ValueError("from_ and to_ are required")
+
+		connection = self._require_connection()
+		with connection.cursor() as cursor:
+			if self._schema_migration_mode == "v2_only":
+				cursor.execute(
+					"""
+					SELECT COUNT(*), AVG(download_mbps), MAX(download_mbps), MIN(download_mbps),
+					       AVG(upload_mbps), MAX(upload_mbps), MIN(upload_mbps)
+					FROM network_speed_logs_v2
+					WHERE measured_at >= %s AND measured_at <= %s
+					""",
+					(from_, to_),
+				)
+			else:
+				cursor.execute(
+					"""
+					SELECT COUNT(*), AVG(download_speed_Mbps), MAX(download_speed_Mbps), MIN(download_speed_Mbps),
+					       AVG(upload_speed_Mbps), MAX(upload_speed_Mbps), MIN(upload_speed_Mbps)
+					FROM network_speed_measurements
+					WHERE timestamp >= %s AND timestamp <= %s
+					""",
+					(from_, to_),
+				)
+			row = cursor.fetchone()
+
+		count, avg_d, max_d, min_d, avg_u, max_u, min_u = row
+		if count == 0:
+			return {
+				"count": 0,
+				"avg_download_mbps": None,
+				"max_download_mbps": None,
+				"min_download_mbps": None,
+				"avg_upload_mbps": None,
+				"max_upload_mbps": None,
+				"min_upload_mbps": None,
+			}
+
+		return {
+			"count": int(count),
+			"avg_download_mbps": round(float(avg_d), 3) if avg_d is not None else None,
+			"max_download_mbps": round(float(max_d), 3) if max_d is not None else None,
+			"min_download_mbps": round(float(min_d), 3) if min_d is not None else None,
+			"avg_upload_mbps": round(float(avg_u), 3) if avg_u is not None else None,
+			"max_upload_mbps": round(float(max_u), 3) if max_u is not None else None,
+			"min_upload_mbps": round(float(min_u), 3) if min_u is not None else None,
+		}

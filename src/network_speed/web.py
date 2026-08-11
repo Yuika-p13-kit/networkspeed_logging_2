@@ -6,8 +6,11 @@ from typing import Any, Optional, List
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
+import logging
 
 from .models import MeasurementRecord
+
+_logger = logging.getLogger(__name__)
 
 
 class DashboardRecord(BaseModel):
@@ -62,6 +65,7 @@ def create_app(repo: Any):
         try:
             latest = repo.fetch_latest()
         except Exception as exc:
+            _logger.exception("failed to fetch latest measurement")
             raise HTTPException(status_code=500, detail="internal error") from exc
 
         if latest is None:
@@ -118,6 +122,7 @@ def create_app(repo: Any):
             else:
                 raise RuntimeError("repository does not implement fetch_history")
         except Exception as exc:
+            _logger.exception("error while retrieving history")
             raise HTTPException(status_code=500, detail="internal error") from exc
 
         dash_records = [_record_to_dashboard(r) for r in records]
@@ -188,6 +193,7 @@ def create_app(repo: Any):
                         "min_upload_mbps": round(min(uploads), 3),
                     }
         except Exception as exc:
+            _logger.exception("error while computing/retrieving stats")
             raise HTTPException(status_code=500, detail="internal error") from exc
 
         return StatsResponse(**stats)

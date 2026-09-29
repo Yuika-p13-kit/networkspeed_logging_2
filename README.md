@@ -5,7 +5,7 @@
 ## 使用方法
 ## 前提条件
 
-1. Python 3.8 以上がインストール済みであること
+1. Python 3.11 以上がインストール済みであること
 2. [`uv`](https://docs.astral.sh/uv/) がインストール済みであること
 3. PostgreSQL がセットアップ済みであること
 4. リポジトリルートに `database_info.txt` が存在すること（形式例: `host=xxx\ndbname=xxx\nuser=xxx\npassword=xxx`）
@@ -49,8 +49,8 @@ v1互換導線（`v1_only`）は切り戻し専用として一時的に維持し
 # テストを実行
 uv run pytest tests/
 
-# コード品質チェック
-uv run black src/ && uv run flake8 src/
+# CI と同じ依存関係でテストを実行
+uv run pytest
 ```
 
 ### 現在の実装状況

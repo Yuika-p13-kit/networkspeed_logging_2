@@ -1,0 +1,231 @@
+#!/usr/bin/env python3
+"""Check measurement freshness and send ntfy incident/reminder/recovery alerts."""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+import subprocess
+import sys
+from typing import Any
+
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+SRC_DIR = PROJECT_ROOT / "src"
+if str(SRC_DIR) not in sys.path:
+	sys.path.insert(0, str(SRC_DIR))
+
+import psycopg2
+
+from network_speed.config import load_app_config
+from network_speed.health_monitor import load_state, publish_ntfy, save_state
+
+
+_logger = logging.getLogger("measurement_health")
+DEFAULT_STALE_AFTER_MINUTES = 30
+DEFAULT_REMINDER_INTERVAL_HOURS = 24
+
+
+def _positive_int(name: str, default: int) -> int:
+	raw_value = os.getenv(name, str(default))
+	try:
+		value = int(raw_value)
+	except ValueError as exc:
+		raise ValueError(f"{name} must be a positive integer") from exc
+	if value <= 0:
+		raise ValueError(f"{name} must be a positive integer")
+	return value
+
+
+def _latest_successful_measurement(config: Any) -> datetime | None:
+	connection = psycopg2.connect(
+		host=config.db.host,
+		dbname=config.db.database,
+		user=config.db.user,
+		password=config.db.password,
+		port=config.db.port,
+		connect_timeout=8,
+	)
+	try:
+		with connection:
+			with connection.cursor() as cursor:
+				cursor.execute("SET LOCAL statement_timeout = '5s'")
+				cursor.execute(
+					"""
+					SELECT max(measured_at)
+					FROM network_speed_logs_v2
+					WHERE status = 'success'
+					"""
+				)
+				return cursor.fetchone()[0]
+	finally:
+		connection.close()
+
+
+def _service_is_active(service_name: str) -> bool:
+	result = subprocess.run(
+		["systemctl", "is-active", "--quiet", service_name],
+		check=False,
+		timeout=5,
+	)
+	return result.returncode == 0
+
+
+def _recent_error_summary(service_name: str) -> str | None:
+	try:
+		result = subprocess.run(
+			[
+				"journalctl",
+				"-u",
+				service_name,
+				"-p",
+				"err",
+				"-n",
+				"3",
+				"--no-pager",
+				"-o",
+				"cat",
+			],
+			capture_output=True,
+			text=True,
+			check=False,
+			timeout=5,
+		)
+		if result.returncode != 0:
+			return None
+		summary = " | ".join(line.strip() for line in result.stdout.splitlines() if line.strip())
+		return summary[-800:] if summary else None
+	except (OSError, subprocess.TimeoutExpired):
+		return None
+
+
+def _epoch(value: datetime) -> float:
+	if value.tzinfo is None:
+		return value.timestamp()
+	return value.astimezone(timezone.utc).timestamp()
+
+
+def _format_local_epoch(value: float | None) -> str:
+	if value is None:
+		return "なし"
+	return datetime.fromtimestamp(value).astimezone().isoformat(timespec="seconds")
+
+
+def _message(reason: str, last_success_epoch: float | None, error_summary: str | None) -> str:
+	parts = [
+		"network-speed の計測が停止または長時間成功していません。",
+		f"状態: {reason}",
+		f"最終成功計測: {_format_local_epoch(last_success_epoch)}",
+	]
+	if error_summary:
+		parts.append(f"直近のエラー: {error_summary}")
+	return "\n".join(parts)
+
+
+def _publish(topic: str, title: str, message: str, token: str | None) -> bool:
+	try:
+		publish_ntfy(topic=topic, title=title, message=message, token=token)
+		return True
+	except Exception:
+		_logger.exception("ntfy notification could not be delivered")
+		return False
+
+
+def run_health_check() -> int:
+	logging.basicConfig(
+		level=logging.INFO,
+		format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+	)
+	topic = os.getenv("NETWORK_SPEED_NTFY_TOPIC", "").strip()
+	if not topic:
+		_logger.info("ntfy topic is not configured; health alerts are disabled")
+		return 0
+
+	now_epoch = datetime.now().astimezone().timestamp()
+	state_path = os.getenv(
+		"NETWORK_SPEED_HEALTH_STATE_PATH",
+		"/var/lib/network-speed-health/state.json",
+	)
+	state = load_state(state_path, now_epoch)
+	stale_after = _positive_int(
+		"NETWORK_SPEED_MEASUREMENT_STALE_MINUTES", DEFAULT_STALE_AFTER_MINUTES
+	) * 60
+	reminder_interval = _positive_int(
+		"NETWORK_SPEED_HEALTH_REMINDER_HOURS", DEFAULT_REMINDER_INTERVAL_HOURS
+	) * 60 * 60
+	service_name = os.getenv("NETWORK_SPEED_SERVICE_NAME", "network-speed.service")
+	token = os.getenv("NETWORK_SPEED_NTFY_TOKEN") or None
+
+	last_success_epoch: float | None = None
+	reason: str | None = None
+	error_summary: str | None = None
+	try:
+		config = load_app_config(PROJECT_ROOT)
+		latest_success = _latest_successful_measurement(config)
+		if latest_success is not None:
+			last_success_epoch = _epoch(latest_success)
+	except Exception:
+		_logger.exception("latest successful measurement could not be read")
+		reason = "DBから計測状態を確認できません"
+	if last_success_epoch is None:
+		last_success_epoch = state.get("last_success_at")
+
+	try:
+		service_active = _service_is_active(service_name)
+	except (OSError, subprocess.TimeoutExpired):
+		_logger.exception("measurement service state could not be read")
+		service_active = False
+
+	if reason is None and not service_active:
+		reason = f"{service_name} が active ではありません"
+	if reason is None:
+		if last_success_epoch is None:
+			age_seconds = now_epoch - float(state["monitor_started_at"])
+			if age_seconds >= stale_after:
+				reason = "成功した計測記録がまだありません"
+		elif now_epoch - last_success_epoch >= stale_after:
+			reason = f"最終成功計測から{int((now_epoch - last_success_epoch) // 60)}分経過しています"
+
+	if last_success_epoch is not None:
+		state["last_success_at"] = last_success_epoch
+
+	if reason is not None:
+		error_summary = _recent_error_summary(service_name)
+		if state.get("incident_started_at") is None:
+			state["incident_started_at"] = now_epoch
+			state["last_notification_at"] = None
+		state["incident_reason"] = reason
+		last_notification_at = state.get("last_notification_at")
+		should_notify = (
+			last_notification_at is None
+			or now_epoch - float(last_notification_at) >= reminder_interval
+		)
+		if should_notify:
+			title = "Network speed measurement stopped" if last_notification_at is None else "Network speed still unavailable"
+			if _publish(topic, title, _message(reason, last_success_epoch, error_summary), token):
+				state["last_notification_at"] = now_epoch
+	else:
+		incident_started_at = state.get("incident_started_at")
+		if (
+			incident_started_at is not None
+			and last_success_epoch is not None
+			and last_success_epoch > float(incident_started_at)
+		):
+			message = "network-speed の計測が再開しました。\n" + f"最終成功計測: {_format_local_epoch(last_success_epoch)}"
+			if _publish(topic, "Network speed measurement recovered", message, token):
+				state["incident_started_at"] = None
+				state["last_notification_at"] = None
+				state["incident_reason"] = None
+
+	try:
+		save_state(state_path, state)
+	except OSError:
+		_logger.exception("health monitor state could not be saved")
+		return 1
+	return 0
+
+
+if __name__ == "__main__":
+	raise SystemExit(run_health_check())

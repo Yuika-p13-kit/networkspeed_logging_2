@@ -1,0 +1,19 @@
+[Unit]
+Description=Check network speed measurement health and notify through ntfy
+After=network-online.target network-speed.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=threeb
+WorkingDirectory=/home/threeb/network_speed
+ExecStart=/home/threeb/network_speed/.venv/bin/python /home/threeb/network_speed/scripts/monitor_measurement_health.py
+Environment=PYTHONUNBUFFERED=1
+Environment=NETWORK_SPEED_SERVICE_NAME=network-speed.service
+Environment=NETWORK_SPEED_MEASUREMENT_STALE_MINUTES=30
+Environment=NETWORK_SPEED_HEALTH_REMINDER_HOURS=24
+Environment=NETWORK_SPEED_HEALTH_STATE_PATH=/var/lib/network-speed-health/state.json
+EnvironmentFile=-/etc/default/network-speed-health
+StateDirectory=network-speed-health
+StateDirectoryMode=0750
+TimeoutStartSec=30

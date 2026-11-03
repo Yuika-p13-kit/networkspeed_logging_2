@@ -11,6 +11,10 @@ wheels/
 
 # 環境固有の設定ファイル（認証情報を含む）
 database_info.txt
+.deploy.env
+
+# ローカル TLS 証明書（秘密鍵を含む）
+certs/
 
 # ローカル運用・レビュー補助ファイル
 .gh-config/

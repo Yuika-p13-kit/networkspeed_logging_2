@@ -113,6 +113,59 @@ python scripts/monitor_dual_write.py --mode v2_only --observation-days 7 --inter
 
 4. 問題が出た場合は、Step 3 の切り戻し手順で `v1_only` に戻します。
 
+## 運用確認（HTTPS 最小構成）
+
+Pi の初回ホスト名/mDNS設定は README の「Raspberry Pi のLAN内ホスト名を設定」を参照してください。ここでは、設定済みの名前 `network-speed-pi.local` からサービスを運用確認します。
+
+1. Mac から同じLAN上で名前解決とSSHを確認します。
+
+```bash
+dns-sd -G v4 network-speed-pi.local
+ssh threeb@network-speed-pi.local 'hostnamectl --static; systemctl is-active avahi-daemon'
+```
+
+`dns-sd` は名前とIPv4アドレスが表示されたら `Control-C` で終了します。解決しない場合は同一LAN接続、ゲストWi-Fi/端末分離、重複ホスト名、Pi上の `avahi-daemon` の順に確認します。LANがmDNSマルチキャストを遮断する場合は、ルーターのローカルDNSへ一意の名前を登録し、証明書生成で `NETWORK_SPEED_HOSTNAME=<DNS名>`、デプロイで `DEPLOY_HOST=<DNS名>` を指定します。SSH/SCP/HTTPSの接続先も同じ名前にします。
+
+2. service の SSL 環境変数を確認します。
+
+```bash
+sudo systemctl show -p Environment network-speed.service
+```
+
+期待値の例:
+
+- `NETWORK_SPEED_SSL_CERT=/home/threeb/network_speed/certs/network-speed-local.crt`
+- `NETWORK_SPEED_SSL_KEY=/home/threeb/network_speed/certs/network-speed-local.key`
+- `NETWORK_SPEED_SSL_PORT=8443`
+
+3. Pi 自身で8443の待ち受けと応答を確認します。
+
+```bash
+sudo ss -lntp | grep -E ":8000|:8443" || true
+curl -k -sS -D - https://127.0.0.1:8443/ -o /dev/null | sed -n "1,15p"
+curl -k -sS -D - https://127.0.0.1:8443/api/dashboard/latest | sed -n "1,20p"
+```
+
+4. Mac のlogin Keychainに自己署名証明書をSSL用の信頼ルートとして登録し、選定したホスト名でHTTPSとAPIを確認します。Mac標準curlはSecureTransportを使うため、`--cacert` ではなくKeychainで信頼させます。IPv6はサービスが待ち受けないため、検証では `-4` を指定します。`curl -k` は証明書とホスト名の検証を無効化するため、この確認には使いません。
+
+```bash
+security add-trusted-cert -r trustRoot -p ssl -k "$HOME/Library/Keychains/login.keychain-db" certs/network-speed-local.crt
+curl -4 --fail --show-error https://network-speed-pi.local:8443/
+curl -4 --fail --show-error https://network-speed-pi.local:8443/api/dashboard/latest
+```
+
+5. 判定基準:
+
+- 起動ログが `Web サーバー起動: https://0.0.0.0:8443`
+- `https://127.0.0.1:8443/` が `HTTP/1.1 200 OK`
+- `/api/dashboard/latest` が 200 + JSON
+
+6. 失敗時の確認順:
+
+- `/home/threeb/network_speed/certs` の存在と証明書ファイル配置
+- `systemd` unit の SSL 環境変数
+- `sudo systemctl daemon-reload && sudo systemctl restart network-speed.service`
+
 ## 整合性確認 SQL
 
 ```sql
@@ -148,3 +201,4 @@ export NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v1_only
 - バックフィル本実行後、再度 dry-run が 0 件または許容範囲の差分である。
 - 最新時刻比較で v2 の遅延が許容範囲内である。
 - 切り戻し手順で `v1_only` に戻せることが確認済みである。
+- HTTPS 運用時は `8443` の LISTEN と `curl -k` での 200 応答が確認済みである。

@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [feature/issue-4-dashboard]
+    branches: [main, feature/issue-4-dashboard]
   pull_request:
     branches: [main]
 
@@ -18,8 +18,7 @@ jobs:
     - name: Install dependencies
       run: |
         python -m pip install --upgrade pip
-        if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
-        pip install fastapi[all] pytest requests
+        pip install '.[dev]'
     - name: Run tests
       run: |
         pytest -q

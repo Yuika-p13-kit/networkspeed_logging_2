@@ -24,6 +24,45 @@ from network_speed.web import create_app
 logger = logging.getLogger(__name__)
 
 
+def _start_scheduler_thread(scheduled_job) -> Thread:
+    def _scheduler_worker() -> None:
+        import schedule
+
+        register_measurement_jobs(schedule_module=schedule, job_callable=scheduled_job)
+        logger.info("スケジュール登録完了: 毎時 :00/:10/:20/:30/:40/:50")
+        run_scheduler_loop(schedule_module=schedule)
+
+    scheduler_thread = Thread(target=_scheduler_worker, daemon=True)
+    scheduler_thread.start()
+    return scheduler_thread
+
+
+def _run_web_server(
+    web_app,
+    host: str,
+    port: int,
+    ssl_certfile: str | None = None,
+    ssl_keyfile: str | None = None,
+) -> None:
+    from uvicorn import Config, Server
+
+    config_uvicorn = Config(
+        app=web_app,
+        host=host,
+        port=port,
+        log_level="info",
+        ssl_certfile=ssl_certfile,
+        ssl_keyfile=ssl_keyfile,
+    )
+    server = Server(config_uvicorn)
+
+    try:
+        server.run()
+    except Exception:
+        logger.exception("Web サーバー起動に失敗しました")
+        raise
+
+
 def run_measurement_cycle(
     repo: PostgresRepository,
     backup: CsvBackupStore,
@@ -60,9 +99,6 @@ def run_measurement_cycle(
 
 
 def bootstrap_and_run(base_dir: str | Path = ".") -> None:
-    import schedule
-    from uvicorn import Config, Server
-
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -89,30 +125,30 @@ def bootstrap_and_run(base_dir: str | Path = ".") -> None:
     base_path = Path(base_dir)
     static_dir = base_path / "src" / "network_speed" / "static"
     template_dir = base_path / "src" / "network_speed" / "templates"
-    
+
     web_app = create_app(repo, static_dir=static_dir, template_dir=template_dir)
-    config_uvicorn = Config(
-        app=web_app,
-        host=config.web_host,
-        port=config.web_port,
-        log_level="info",
+    web_host = getattr(config, "web_host", "0.0.0.0")
+    web_ssl_cert = getattr(config, "web_ssl_cert", None)
+    web_ssl_key = getattr(config, "web_ssl_key", None)
+    run_https = bool(web_ssl_cert and web_ssl_key)
+    web_port = getattr(config, "web_ssl_port", 8443) if run_https else getattr(config, "web_port", 8000)
+
+    _start_scheduler_thread(
+        scheduled_job=lambda: run_measurement_cycle(repo=repo, backup=backup, config=config)
     )
-    server = Server(config_uvicorn)
-    
-    web_thread = Thread(target=server.run, daemon=True)
-    web_thread.start()
     logger.info(
-        "Web サーバー起動: http://%s:%d",
-        config.web_host,
-        config.web_port,
+        "Web サーバー起動: %s://%s:%d",
+        "https" if run_https else "http",
+        web_host,
+        web_port,
     )
-
-    def scheduled_job() -> None:
-        run_measurement_cycle(repo=repo, backup=backup, config=config)
-
-    register_measurement_jobs(schedule_module=schedule, job_callable=scheduled_job)
-    logger.info("スケジュール登録完了: 毎時 :00/:10/:20/:30/:40/:50")
-    run_scheduler_loop(schedule_module=schedule)
+    _run_web_server(
+        web_app,
+        host=web_host,
+        port=web_port,
+        ssl_certfile=web_ssl_cert if run_https else None,
+        ssl_keyfile=web_ssl_key if run_https else None,
+    )
 
 
 def main() -> None:

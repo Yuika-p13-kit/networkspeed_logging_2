@@ -105,10 +105,11 @@ def test_bootstrap_calls_replay_and_continues_on_failure(monkeypatch: pytest.Mon
     fake_repo = FakeRepo()
     fake_backup = FakeBackup(fail_on_replay=True)
     cfg = _config()
-    calls = {"register": 0, "loop": 0}
+    calls = {"scheduler": 0, "web": 0, "host": None, "port": None}
     captured = {"schema_migration_mode": None}
 
     monkeypatch.setattr(main, "load_app_config", lambda base_dir='.': cfg)
+
     def _fake_repository_factory(db_config, schema_migration_mode="v2_only"):
         captured["schema_migration_mode"] = schema_migration_mode
         return fake_repo
@@ -116,20 +117,34 @@ def test_bootstrap_calls_replay_and_continues_on_failure(monkeypatch: pytest.Mon
     monkeypatch.setattr(main, "PostgresRepository", _fake_repository_factory)
     monkeypatch.setattr(main, "CsvBackupStore", lambda csv_path: fake_backup)
 
-    def _fake_register(schedule_module, job_callable):
-        calls["register"] += 1
+    def _fake_start_scheduler_thread(scheduled_job):
+        calls["scheduler"] += 1
+        assert callable(scheduled_job)
 
-    def _fake_loop(schedule_module, interval_seconds=1.0, sleeper=None):
-        calls["loop"] += 1
+    def _fake_run_web_server(
+        web_app,
+        host,
+        port,
+        ssl_certfile=None,
+        ssl_keyfile=None,
+    ):
+        calls["web"] += 1
+        calls["host"] = host
+        calls["port"] = port
+        calls["ssl_certfile"] = ssl_certfile
+        calls["ssl_keyfile"] = ssl_keyfile
 
-    monkeypatch.setattr(main, "register_measurement_jobs", _fake_register)
-    monkeypatch.setattr(main, "run_scheduler_loop", _fake_loop)
-    monkeypatch.setitem(sys.modules, "schedule", object())
+    monkeypatch.setattr(main, "_start_scheduler_thread", _fake_start_scheduler_thread)
+    monkeypatch.setattr(main, "_run_web_server", _fake_run_web_server)
 
     main.bootstrap_and_run(base_dir='.')
 
     assert fake_repo.connected is True
     assert fake_backup.replay_called == 1
     assert captured["schema_migration_mode"] == cfg.schema_migration_mode
-    assert calls["register"] == 1
-    assert calls["loop"] == 1
+    assert calls["scheduler"] == 1
+    assert calls["web"] == 1
+    assert calls["host"] == "0.0.0.0"
+    assert calls["port"] == 8000
+    assert calls["ssl_certfile"] is None
+    assert calls["ssl_keyfile"] is None

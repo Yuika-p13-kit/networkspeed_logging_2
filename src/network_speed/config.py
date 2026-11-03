@@ -90,8 +90,11 @@ def load_app_config(base_dir: Path | str = ".") -> AppConfig:
 	device = env.get("NETWORK_SPEED_DEVICE", "Mac")
 	history_limit_default = int(env.get("NETWORK_SPEED_HISTORY_LIMIT_DEFAULT", "100"))
 	retry_max_attempts = int(env.get("NETWORK_SPEED_RETRY_MAX_ATTEMPTS", "5"))
-	web_host = env.get("NETWORK_SPEED_WEB_HOST", "0.0.0.0")
-	web_port = int(env.get("NETWORK_SPEED_WEB_PORT", "8000"))
+	web_host = env.get("NETWORK_SPEED_WEB_HOST") or file_values.get("web_host") or "0.0.0.0"
+	web_port = int(env.get("NETWORK_SPEED_WEB_PORT") or file_values.get("web_port") or "8000")
+	web_ssl_port = int(env.get("NETWORK_SPEED_SSL_PORT") or file_values.get("ssl_port") or "8443")
+	web_ssl_cert = env.get("NETWORK_SPEED_SSL_CERT") or file_values.get("ssl_cert")
+	web_ssl_key = env.get("NETWORK_SPEED_SSL_KEY") or file_values.get("ssl_key")
 	schema_migration_mode = parse_schema_migration_mode(
 		env.get("NETWORK_SPEED_SCHEMA_MIGRATION_MODE", "v2_only")
 	)
@@ -104,5 +107,8 @@ def load_app_config(base_dir: Path | str = ".") -> AppConfig:
 		retry_max_attempts=retry_max_attempts,
 		web_host=web_host,
 		web_port=web_port,
+		web_ssl_port=web_ssl_port,
+		web_ssl_cert=web_ssl_cert,
+		web_ssl_key=web_ssl_key,
 		schema_migration_mode=schema_migration_mode,
 	)

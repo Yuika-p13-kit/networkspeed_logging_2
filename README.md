@@ -80,6 +80,29 @@ bash scripts/deploy_to_raspberrypi.sh
 
 既定では `threeb@network-speed-pi.local:/home/threeb/network_speed` に同期し、`network-speed.service` を再起動します。ルーターDNSを使う場合は `--host` または `DEPLOY_HOST` でその名前を指定できます。`--user`、`--path`、`--service` も必要に応じて上書きできます。
 
+通常デプロイでは `network-speed-health.service` と `network-speed-health.timer` も配置し、5分ごとの独立監視を有効にします。初回デプロイ時に ntfy のトピックがランダム生成され、デプロイ出力に表示されます。そのトピックを ntfy アプリで購読してください。トピックは `/etc/default/network-speed-health` に保存されます。
+デプロイ用SSHユーザーは、systemd unit の配置、`/etc/default/network-speed-health` の作成と権限設定、systemd の再読み込み・有効化・再起動を `sudo -n` で実行できる必要があります。
+
+### 計測停止通知（ntfy）
+
+- 通知先は既定サーバー `https://ntfy.sh` です。トピックは初回デプロイ時に Pi 上で生成され、リポジトリには保存されません。
+- トピック名を自分で選ぶ場合は、デプロイ後に Pi 上の `/etc/default/network-speed-health` を編集し、`NETWORK_SPEED_NTFY_TOPIC=<topic>` の値を変更してください。次回の監視実行から反映されます。
+- トピック名は通知を受け取る ntfy アプリでも必要です。ntfy.sh はトピック名を知る人が購読・投稿できる公開サーバーのため、表示されたトピック名は秘密として扱ってください。
+- 初期設定では、`network-speed.service` が active でない、DBから計測状態を読めない、または成功計測が30分以上ない場合に通知します。DBに記録が一度もない場合は、監視開始から30分後に通知します。
+- 以前は成功記録があったのにDBから見つからなくなった場合も、データ消失の可能性として通知します。
+- 同一障害の発生時に1回通知し、未復旧なら前回通知から24時間ごとにリマインダーを送ります。障害発生通知は夜間も保留しません。障害開始後の成功計測を確認したら復旧通知を1回送ります。
+- ntfy アクセストークンが必要な場合は、Pi 上で `/etc/default/network-speed-health` に `NETWORK_SPEED_NTFY_TOKEN=<token>` を追記してください。ファイルは mode 600 で保護されます。トークンをリポジトリやシェル履歴に保存しないでください。
+- 閾値は `NETWORK_SPEED_MEASUREMENT_STALE_MINUTES`、リマインダー間隔は `NETWORK_SPEED_HEALTH_REMINDER_HOURS` で変更できます（systemd unit の Environment を編集して `sudo systemctl daemon-reload`）。
+
+状態確認:
+
+```bash
+ssh threeb@network-speed-pi.local 'systemctl status network-speed-health.timer --no-pager'
+ssh threeb@network-speed-pi.local 'sudo journalctl -u network-speed-health.service -n 30 --no-pager'
+```
+
+この監視は計測サービスとは別プロセスですが、同じ Raspberry Pi 上で実行されます。Pi の電源断やネットワーク断の最中は監視も通知もできないため、その状態も検知するには Pi 外の監視主体が別途必要です。
+
 ### Raspberry Pi への HTTPS 最小構成反映手順
 
 以下は自己署名証明書を使うHTTPS設定手順です。証明書には `network-speed-pi.local` が含まれます。SANを更新するため、既存のローカル証明書を明示的に置き換える `--force` を指定します。

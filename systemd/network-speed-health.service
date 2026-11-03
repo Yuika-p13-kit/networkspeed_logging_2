@@ -1,0 +1,19 @@
+[Unit]
+Description=Check network speed measurement health and notify through ntfy
+After=network-online.target @SERVICE_NAME@
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=@SERVICE_USER@
+WorkingDirectory="@PROJECT_PATH@"
+ExecStart="@PROJECT_PATH@/.venv/bin/python" "@PROJECT_PATH@/scripts/monitor_measurement_health.py"
+Environment=PYTHONUNBUFFERED=1
+Environment=NETWORK_SPEED_SERVICE_NAME=@SERVICE_NAME@
+Environment=NETWORK_SPEED_MEASUREMENT_STALE_MINUTES=30
+Environment=NETWORK_SPEED_HEALTH_REMINDER_HOURS=24
+Environment=NETWORK_SPEED_HEALTH_STATE_PATH=/var/lib/network-speed-health/state.json
+EnvironmentFile=-/etc/default/network-speed-health
+StateDirectory=network-speed-health
+StateDirectoryMode=0750
+TimeoutStartSec=30

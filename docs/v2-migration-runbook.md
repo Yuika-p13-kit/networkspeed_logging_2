@@ -184,6 +184,20 @@ SELECT
   (SELECT max(measured_at) FROM network_speed_logs_v2 WHERE status = 'success') AS v2_latest;
 ```
 
+## 計測停止通知の運用
+
+- `network-speed-health.timer` は起動後2分で監視を開始し、その後5分間隔で実行します。
+- 監視は `network-speed.service` の状態と `network_speed_logs_v2` の最新成功計測時刻を確認します。30分以上新しい成功記録がない場合、またはサービス停止/DB確認失敗を検知した場合は ntfy へ障害通知します。
+- 障害は発生時に通知し、未復旧中は24時間ごとを目安に再通知します。障害開始後に成功計測が記録されると復旧通知を1回送ります。
+- 通知の送信失敗は `network-speed-health.service` の journal に記録されます。次回の5分周期で再送を試みます。
+- Pi の電源断やネットワーク断では同じ Pi 上の timer は動作しません。これらも通知対象にする場合、外部からPiまたは計測APIを監視する仕組みが必要です。
+
+```bash
+sudo systemctl status network-speed-health.timer --no-pager
+sudo journalctl -u network-speed-health.service --since today --no-pager
+sudo cat /var/lib/network-speed-health/state.json
+```
+
 ## 切り戻し手順
 
 1. 実行環境の設定を `v1_only` に戻します。

@@ -13,6 +13,9 @@ RestartSec=5
 Environment=PYTHONUNBUFFERED=1
 Environment=NETWORK_SPEED_DEVICE=raspi3B
 Environment=NETWORK_SPEED_SCHEMA_MIGRATION_MODE=v2_only
+Environment=NETWORK_SPEED_SSL_CERT=/home/threeb/network_speed/certs/network-speed-local.crt
+Environment=NETWORK_SPEED_SSL_KEY=/home/threeb/network_speed/certs/network-speed-local.key
+Environment=NETWORK_SPEED_SSL_PORT=8443
 
 [Install]
 WantedBy=multi-user.target

@@ -106,7 +106,7 @@ def create_app(
         if templates is None:
             return "<html><body><h1>Network Speed Dashboard</h1><p>API ready at /api/dashboard/latest</p></body></html>"
         try:
-            return templates.TemplateResponse("dashboard.html", {"request": request})
+            return templates.TemplateResponse(request, "dashboard.html", {"request": request})
         except Exception as exc:
             _logger.error("Failed to render dashboard template: %s", exc)
             return f"<html><body><h1>Error</h1><p>{exc}</p></body></html>"

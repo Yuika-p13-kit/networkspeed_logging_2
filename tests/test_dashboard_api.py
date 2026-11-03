@@ -37,6 +37,20 @@ def make_record(ts, d, u, device="Mac"):
     return MeasurementRecord(timestamp=ts, download_mbps=d, upload_mbps=u, device=device)
 
 
+def test_root_dashboard_renders_html():
+    repo = DummyRepoLatest(record=None)
+    app = create_app(
+        repo,
+        static_dir="src/network_speed/static",
+        template_dir="src/network_speed/templates",
+    )
+    client = TestClient(app)
+
+    r = client.get("/")
+    assert r.status_code == 200
+    assert "Network Speed Dashboard" in r.text
+
+
 def test_latest_returns_expected_shape():
     ts = datetime(2026, 8, 9, 12, 0, 0, tzinfo=timezone.utc)
     rec = make_record(ts, 120.1234, 20.4567, device="Mac")

@@ -21,6 +21,9 @@ class AppConfig:
     retry_max_attempts: int = 5
     web_host: str = "0.0.0.0"
     web_port: int = 8000
+    web_ssl_port: int = 8443
+    web_ssl_cert: Optional[str] = None
+    web_ssl_key: Optional[str] = None
     schema_migration_mode: str = "v2_only"
 
 

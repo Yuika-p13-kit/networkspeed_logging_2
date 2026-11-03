@@ -89,6 +89,7 @@ bash scripts/deploy_to_raspberrypi.sh
 - トピック名を自分で選ぶ場合は、デプロイ後に Pi 上の `/etc/default/network-speed-health` を編集し、`NETWORK_SPEED_NTFY_TOPIC=<topic>` の値を変更してください。次回の監視実行から反映されます。
 - トピック名は通知を受け取る ntfy アプリでも必要です。ntfy.sh はトピック名を知る人が購読・投稿できる公開サーバーのため、表示されたトピック名は秘密として扱ってください。
 - 初期設定では、`network-speed.service` が active でない、DBから計測状態を読めない、または成功計測が30分以上ない場合に通知します。DBに記録が一度もない場合は、監視開始から30分後に通知します。
+- 以前は成功記録があったのにDBから見つからなくなった場合も、データ消失の可能性として通知します。
 - 同一障害の発生時に1回通知し、未復旧なら前回通知から24時間ごとにリマインダーを送ります。障害発生通知は夜間も保留しません。障害開始後の成功計測を確認したら復旧通知を1回送ります。
 - ntfy アクセストークンが必要な場合は、Pi 上で `/etc/default/network-speed-health` に `NETWORK_SPEED_NTFY_TOKEN=<token>` を追記してください。ファイルは mode 600 で保護されます。トークンをリポジトリやシェル履歴に保存しないでください。
 - 閾値は `NETWORK_SPEED_MEASUREMENT_STALE_MINUTES`、リマインダー間隔は `NETWORK_SPEED_HEALTH_REMINDER_HOURS` で変更できます（systemd unit の Environment を編集して `sudo systemctl daemon-reload`）。

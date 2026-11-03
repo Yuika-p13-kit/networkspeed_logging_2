@@ -80,10 +80,10 @@ def _recent_error_summary(service_name: str) -> str | None:
 				"journalctl",
 				"-u",
 				service_name,
-				"-p",
-				"err",
 				"-n",
-				"3",
+				"100",
+				"--since",
+				"24 hours ago",
 				"--no-pager",
 				"-o",
 				"cat",
@@ -95,7 +95,16 @@ def _recent_error_summary(service_name: str) -> str | None:
 		)
 		if result.returncode != 0:
 			return None
-		summary = " | ".join(line.strip() for line in result.stdout.splitlines() if line.strip())
+		error_lines = [
+			line.strip()
+			for line in result.stdout.splitlines()
+			if line.strip()
+			and any(
+				marker in line.lower()
+				for marker in ("[error]", "failed", "traceback", "失敗", "例外", "エラー")
+			)
+		]
+		summary = " | ".join(error_lines[-3:])
 		return summary[-800:] if summary else None
 	except (OSError, subprocess.TimeoutExpired):
 		return None
@@ -159,18 +168,24 @@ def run_health_check() -> int:
 	token = os.getenv("NETWORK_SPEED_NTFY_TOKEN") or None
 
 	last_success_epoch: float | None = None
+	current_success_epoch: float | None = None
+	database_query_succeeded = False
 	reason: str | None = None
 	error_summary: str | None = None
 	try:
 		config = load_app_config(PROJECT_ROOT)
 		latest_success = _latest_successful_measurement(config)
+		database_query_succeeded = True
 		if latest_success is not None:
-			last_success_epoch = _epoch(latest_success)
+			current_success_epoch = _epoch(latest_success)
 	except Exception:
 		_logger.exception("latest successful measurement could not be read")
 		reason = "DBから計測状態を確認できません"
+	last_success_epoch = current_success_epoch
 	if last_success_epoch is None:
-		last_success_epoch = state.get("last_success_at")
+		cached_success = state.get("last_success_at")
+		if cached_success is not None:
+			last_success_epoch = float(cached_success)
 
 	try:
 		service_active = _service_is_active(service_name)
@@ -181,15 +196,34 @@ def run_health_check() -> int:
 	if reason is None and not service_active:
 		reason = f"{service_name} が active ではありません"
 	if reason is None:
-		if last_success_epoch is None:
+		if current_success_epoch is None and state.get("last_success_at") is not None:
+			reason = "DBに以前の成功計測記録が見つかりません"
+		elif current_success_epoch is None:
 			age_seconds = now_epoch - float(state["monitor_started_at"])
 			if age_seconds >= stale_after:
 				reason = "成功した計測記録がまだありません"
-		elif now_epoch - last_success_epoch >= stale_after:
-			reason = f"最終成功計測から{int((now_epoch - last_success_epoch) // 60)}分経過しています"
+		elif now_epoch - current_success_epoch >= stale_after:
+			reason = f"最終成功計測から{int((now_epoch - current_success_epoch) // 60)}分経過しています"
 
-	if last_success_epoch is not None:
-		state["last_success_at"] = last_success_epoch
+	if current_success_epoch is not None:
+		state["last_success_at"] = current_success_epoch
+
+	incident_started_at = state.get("incident_started_at")
+	if (
+		incident_started_at is not None
+		and reason is None
+		and service_active
+		and database_query_succeeded
+		and current_success_epoch is not None
+		and current_success_epoch > float(incident_started_at)
+	):
+		state["recovery_pending"] = {
+			"recovered_at": now_epoch,
+			"last_success_at": current_success_epoch,
+		}
+		state["incident_started_at"] = None
+		state["last_notification_at"] = None
+		state["incident_reason"] = None
 
 	if reason is not None:
 		error_summary = _recent_error_summary(service_name)
@@ -204,20 +238,25 @@ def run_health_check() -> int:
 		)
 		if should_notify:
 			title = "Network speed measurement stopped" if last_notification_at is None else "Network speed still unavailable"
-			if _publish(topic, title, _message(reason, last_success_epoch, error_summary), token):
+			message = _message(reason, last_success_epoch, error_summary)
+			pending_recovery = state.get("recovery_pending")
+			if pending_recovery and last_notification_at is None:
+				message = (
+					"前回の障害は計測再開を確認しましたが、復旧通知が未配信です。\n"
+					+ message
+				)
+			if _publish(topic, title, message, token):
 				state["last_notification_at"] = now_epoch
-	else:
-		incident_started_at = state.get("incident_started_at")
-		if (
-			incident_started_at is not None
-			and last_success_epoch is not None
-			and last_success_epoch > float(incident_started_at)
-		):
-			message = "network-speed の計測が再開しました。\n" + f"最終成功計測: {_format_local_epoch(last_success_epoch)}"
-			if _publish(topic, "Network speed measurement recovered", message, token):
-				state["incident_started_at"] = None
-				state["last_notification_at"] = None
-				state["incident_reason"] = None
+				state["recovery_pending"] = None
+	elif state.get("incident_started_at") is None and state.get("recovery_pending"):
+		pending_recovery = state["recovery_pending"]
+		message = (
+			"network-speed の計測が再開しました。\n"
+			f"復旧確認時刻: {_format_local_epoch(float(pending_recovery['recovered_at']))}\n"
+			f"最終成功計測: {_format_local_epoch(float(pending_recovery['last_success_at']))}"
+		)
+		if _publish(topic, "Network speed measurement recovered", message, token):
+			state["recovery_pending"] = None
 
 	try:
 		save_state(state_path, state)

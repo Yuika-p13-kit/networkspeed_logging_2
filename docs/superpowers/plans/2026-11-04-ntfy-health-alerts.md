@@ -65,6 +65,8 @@
 
 ### Task 4: Branch review and PR
 
-- [ ] Inspect the complete diff for secrets, accidental unrelated files, and requirement coverage.
+- [x] Inspect the complete diff for secrets, accidental unrelated files, and requirement coverage; the independent reviewer findings were addressed.
 - [x] Run non-test syntax/format checks: Python bytecode compilation, `bash -n`, and `git diff --check` passed. Automated tests were not added or run.
 - [ ] Commit the feature and open a PR linked to Issue #14.
+
+**Review record:** An independent review found and drove fixes for recovery delivery retry state, current-vs-cached DB timestamps, deployment path/service overrides, and journal error extraction. Final author review and PR creation remain.

@@ -61,6 +61,11 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+if [[ ! "${service_name}" =~ ^[A-Za-z0-9_.@:-]+$ ]]; then
+  echo "Service name must contain only letters, digits, dot, underscore, @, colon, or hyphen." >&2
+  exit 1
+fi
+
 rsync_args=(
   -az
   --delete
@@ -93,8 +98,32 @@ remote_path="$1"
 service_name="$2"
 env_file="/etc/default/network-speed-health"
 
-sudo -n install -m 0644 "${remote_path}/systemd/network-speed-health.service" \
-  /etc/systemd/system/network-speed-health.service
+service_user="$(sudo -n systemctl show -p User --value "${service_name}")"
+if [[ -z "${service_user}" ]]; then
+  service_user="root"
+fi
+python3 - "${remote_path}" "${service_name}" "${service_user}" <<'PY' \
+  | sudo -n tee /etc/systemd/system/network-speed-health.service >/dev/null
+from pathlib import Path
+import sys
+
+project_path, service_name, service_user = sys.argv[1:]
+template = (Path(project_path) / "systemd/network-speed-health.service").read_text(encoding="utf-8")
+
+def quote_systemd(value: str) -> str:
+    return value.replace("\\", "\\\\").replace('"', '\\"').replace("%", "%%")
+
+replacements = {
+    "@PROJECT_PATH@": quote_systemd(project_path),
+    "@SERVICE_NAME@": service_name,
+    "@SERVICE_USER@": service_user,
+}
+for placeholder, value in replacements.items():
+    template = template.replace(placeholder, value)
+if any(placeholder in template for placeholder in replacements):
+    raise SystemExit("unresolved systemd service template placeholder")
+sys.stdout.write(template)
+PY
 sudo -n install -m 0644 "${remote_path}/systemd/network-speed-health.timer" \
   /etc/systemd/system/network-speed-health.timer
 
